@@ -803,14 +803,38 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
 @app.post("/api/auth/login")
 def login(user: UserLogin, db: Session = Depends(get_db)):
     db_user = db.query(models.User).filter(models.User.username == user.username).first()
+    
+    # Auto-seed master admin if first run
+    if not db_user and user.username == "admin" and user.password == "quantum2026":
+        hashed = get_password_hash("quantum2026")
+        db_user = models.User(username="admin", email="admin@quantbot.ai", hashed_password=hashed)
+        db.add(db_user)
+        db.commit()
+        db.refresh(db_user)
+
     if not db_user or not verify_password(user.password, db_user.hashed_password):
-        raise HTTPException(status_code=401, detail="Incorrect username or password")
+        raise HTTPException(status_code=401, detail="Invalid username or password. Unauthorized access denied.")
     
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
         data={"sub": db_user.username}, expires_delta=access_token_expires
     )
     return {"access_token": access_token, "token_type": "bearer", "username": db_user.username}
+
+class ChangePasswordReq(BaseModel):
+    username: str
+    current_password: str
+    new_password: str
+
+@app.post("/api/auth/change_password")
+def change_password(req: ChangePasswordReq, db: Session = Depends(get_db)):
+    db_user = db.query(models.User).filter(models.User.username == req.username).first()
+    if not db_user or not verify_password(req.current_password, db_user.hashed_password):
+        raise HTTPException(status_code=401, detail="Current password incorrect.")
+    
+    db_user.hashed_password = get_password_hash(req.new_password)
+    db.commit()
+    return {"status": "success", "message": "Password updated successfully!"}
 
 @app.get("/api/portfolio/summary")
 def get_portfolio(db: Session = Depends(get_db)):

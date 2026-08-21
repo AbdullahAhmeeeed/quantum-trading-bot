@@ -6,7 +6,16 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
 const WS_BASE_URL = API_BASE_URL.replace(/^http/, 'ws');
 
 function App() {
-  const [token, setToken] = useState(localStorage.getItem('token') || 'demo_trader_token')
+  const [token, setToken] = useState(localStorage.getItem('token') || '')
+  const [currentUser, setCurrentUser] = useState(localStorage.getItem('username') || 'admin')
+  const [usernameInput, setUsernameInput] = useState('admin')
+  const [passwordInput, setPasswordInput] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
+  const [loginError, setLoginError] = useState('')
+  const [isLoggingIn, setIsLoggingIn] = useState(false)
+  const [currentPasswordInput, setCurrentPasswordInput] = useState('')
+  const [newPasswordInput, setNewPasswordInput] = useState('')
+  const [pwdMsg, setPwdMsg] = useState('')
   
   // Navigation Tabs: DUAL_TERMINAL, TRADE_JOURNAL, AI_CONFIG, BACKTESTING, NEWS
   const [activeTab, setActiveTab] = useState('DUAL_TERMINAL')
@@ -134,6 +143,71 @@ function App() {
     }, 1000);
     return () => clearInterval(timer);
   }, []);
+
+  const handleLogin = async (e) => {
+    if (e) e.preventDefault();
+    setIsLoggingIn(true);
+    setLoginError('');
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: usernameInput, password: passwordInput })
+      });
+      const data = await res.json();
+      if (res.ok && data.access_token) {
+        localStorage.setItem('token', data.access_token);
+        localStorage.setItem('username', data.username);
+        setToken(data.access_token);
+        setCurrentUser(data.username);
+        playSound('SUCCESS');
+      } else {
+        setLoginError(data.detail || 'Invalid username or password.');
+        playSound('ALERT');
+      }
+    } catch (err) {
+      setLoginError('Cannot connect to backend server. Make sure API is live.');
+    }
+    setIsLoggingIn(false);
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('username');
+    setToken('');
+    playSound('ALERT');
+  };
+
+  const handleChangePassword = async (e) => {
+    if (e) e.preventDefault();
+    if (!currentPasswordInput || !newPasswordInput) {
+      setPwdMsg('⚠️ Please fill in both current and new password fields.');
+      return;
+    }
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/auth/change_password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: currentUser,
+          current_password: currentPasswordInput,
+          new_password: newPasswordInput
+        })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        playSound('SUCCESS');
+        setPwdMsg('✅ Password updated successfully!');
+        setCurrentPasswordInput('');
+        setNewPasswordInput('');
+        setTimeout(() => setPwdMsg(''), 4000);
+      } else {
+        setPwdMsg(`❌ ${data.detail || 'Failed to update password.'}`);
+      }
+    } catch (err) {
+      setPwdMsg('❌ Server error while updating password.');
+    }
+  };
 
   const formatLiveDuration = (createdDateStr) => {
     if (!createdDateStr) return '00m 00s';
@@ -452,6 +526,171 @@ function App() {
   const totalFloatingPnl = btcFloatingPnl + goldFloatingPnl;
   const liveNetEquity = (portfolio?.current_balance || 104560.0) + totalFloatingPnl;
 
+  // ── Render Login Portal If Not Authenticated ──────────────────────────
+  if (!token) {
+    return (
+      <div style={{
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: 'radial-gradient(circle at 50% 30%, rgba(0, 240, 255, 0.08) 0%, rgba(7, 10, 18, 0.98) 100%)',
+        padding: '1.5rem',
+        fontFamily: 'Inter, system-ui, sans-serif'
+      }}>
+        <div className="glass-card" style={{
+          width: '100%',
+          maxWidth: '440px',
+          padding: '2.5rem',
+          border: '1px solid rgba(0, 240, 255, 0.35)',
+          boxShadow: '0 25px 60px rgba(0, 0, 0, 0.8), 0 0 40px rgba(0, 240, 255, 0.12)',
+          borderRadius: '20px',
+          animation: 'fadeIn 0.5s ease'
+        }}>
+          <div style={{textAlign: 'center', marginBottom: '2rem'}}>
+            <div style={{
+              width: '64px',
+              height: '64px',
+              margin: '0 auto 1.2rem auto',
+              borderRadius: '16px',
+              background: 'linear-gradient(135deg, rgba(0, 240, 255, 0.2), rgba(168, 85, 247, 0.2))',
+              border: '1px solid rgba(0, 240, 255, 0.5)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '2rem'
+            }}>
+              ⚡
+            </div>
+            <h1 style={{
+              fontSize: '1.6rem',
+              fontWeight: 800,
+              letterSpacing: '-0.5px',
+              margin: '0 0 0.4rem 0',
+              background: 'linear-gradient(90deg, #ffffff, var(--accent-cyan))',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent'
+            }}>
+              QUANTUM AI TRADING OS
+            </h1>
+            <div style={{fontSize: '0.82rem', color: 'var(--text-muted)'}}>
+              🔒 Authorized Institutional Access Portal
+            </div>
+          </div>
+
+          {loginError && (
+            <div style={{
+              background: 'rgba(244, 63, 94, 0.15)',
+              border: '1px solid #f43f5e',
+              color: '#f43f5e',
+              padding: '0.8rem 1rem',
+              borderRadius: '10px',
+              fontSize: '0.82rem',
+              fontWeight: 700,
+              marginBottom: '1.4rem',
+              textAlign: 'center'
+            }}>
+              {loginError}
+            </div>
+          )}
+
+          <form onSubmit={handleLogin}>
+            <div style={{marginBottom: '1.2rem'}}>
+              <label style={{display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '6px', fontWeight: 700}}>
+                OPERATOR USERNAME
+              </label>
+              <input
+                type="text"
+                value={usernameInput}
+                onChange={e => setUsernameInput(e.target.value)}
+                placeholder="e.g. admin"
+                required
+                style={{
+                  width: '100%',
+                  padding: '12px 16px',
+                  background: 'rgba(10, 14, 23, 0.9)',
+                  border: '1px solid var(--border-subtle)',
+                  borderRadius: '10px',
+                  color: '#fff',
+                  fontSize: '0.95rem'
+                }}
+              />
+            </div>
+
+            <div style={{marginBottom: '1.5rem'}}>
+              <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px'}}>
+                <label style={{fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 700}}>
+                  PASSWORD KEY
+                </label>
+                <span 
+                  onClick={() => setShowPassword(!showPassword)} 
+                  style={{fontSize: '0.75rem', color: 'var(--accent-cyan)', cursor: 'pointer', fontWeight: 600}}
+                >
+                  {showPassword ? 'Hide' : 'Show'}
+                </span>
+              </div>
+              <input
+                type={showPassword ? 'text' : 'password'}
+                value={passwordInput}
+                onChange={e => setPasswordInput(e.target.value)}
+                placeholder="Enter password..."
+                required
+                style={{
+                  width: '100%',
+                  padding: '12px 16px',
+                  background: 'rgba(10, 14, 23, 0.9)',
+                  border: '1px solid var(--border-subtle)',
+                  borderRadius: '10px',
+                  color: '#fff',
+                  fontSize: '0.95rem'
+                }}
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={isLoggingIn}
+              className="btn-primary"
+              style={{
+                width: '100%',
+                padding: '13px',
+                fontSize: '0.95rem',
+                fontWeight: 800,
+                borderRadius: '12px',
+                boxShadow: '0 0 25px rgba(0, 240, 255, 0.3)'
+              }}
+            >
+              {isLoggingIn ? '🔐 Verifying Credentials...' : '🚀 Authorize Terminal Access'}
+            </button>
+          </form>
+
+          <div style={{
+            marginTop: '1.8rem',
+            paddingTop: '1.2rem',
+            borderTop: '1px solid var(--border-subtle)',
+            textAlign: 'center'
+          }}>
+            <div style={{
+              display: 'inline-block',
+              background: 'rgba(0, 240, 255, 0.08)',
+              border: '1px solid rgba(0, 240, 255, 0.25)',
+              padding: '6px 14px',
+              borderRadius: '20px',
+              fontSize: '0.75rem',
+              color: 'var(--accent-cyan)',
+              fontWeight: 600
+            }}>
+              💡 Default Master: <b>admin</b> / <b>quantum2026</b>
+            </div>
+            <div style={{marginTop: '10px', fontSize: '0.7rem', color: 'var(--text-dim)'}}>
+              🔒 Protected by 256-Bit Cryptographic Bearer Tokens
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="app-container">
       {/* ── Apple-Grade Sleek Sidebar ───────────────────────────────────── */}
@@ -472,7 +711,7 @@ function App() {
             className={`nav-item ${activeTab === 'TRADE_JOURNAL' ? 'active' : ''}`}
             onClick={() => setActiveTab('TRADE_JOURNAL')}
           >
-            📊 Trades & Ledger ({tradeHistory.length})
+            📜 Trade Ledger ({tradeHistory.length})
           </div>
           <div 
             className={`nav-item ${activeTab === 'AI_CONFIG' ? 'active' : ''}`}
@@ -554,6 +793,23 @@ function App() {
           </div>
 
           <div style={{display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap'}}>
+            {/* Operator Badge */}
+            <div style={{
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: '8px', 
+              background: 'rgba(16, 185, 129, 0.1)', 
+              border: '1px solid rgba(16, 185, 129, 0.25)', 
+              padding: '6px 12px', 
+              borderRadius: '20px', 
+              fontSize: '0.78rem', 
+              fontWeight: 700, 
+              color: 'var(--text-positive)'
+            }}>
+              <span className="live-indicator" style={{background: '#10b981'}} />
+              <span>{currentUser}</span>
+            </div>
+
             {/* Audio Toggle */}
             <button 
               onClick={() => { setAudioEnabled(!audioEnabled); if(!audioEnabled) playSound('SUCCESS'); }}
@@ -1450,6 +1706,56 @@ function App() {
                   💾 Save & Reconnect
                 </button>
               </div>
+            </div>
+
+            {/* 4. OPERATOR SECURITY & PASSWORD MANAGEMENT */}
+            <div className="glass-card" style={{border: '1px solid rgba(168, 85, 247, 0.3)', marginTop: '1.8rem'}}>
+              <h3 style={{margin: '0 0 0.4rem 0', fontSize: '1.4rem', fontWeight: 800}}>🔐 Operator Security & Password Management</h3>
+              <div style={{color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '1.2rem'}}>
+                Update your institutional access key and master operator password.
+              </div>
+
+              {pwdMsg && (
+                <div style={{
+                  background: pwdMsg.includes('✅') ? 'rgba(16, 185, 129, 0.15)' : 'rgba(244, 63, 94, 0.15)',
+                  border: pwdMsg.includes('✅') ? '1px solid #10b981' : '1px solid #f43f5e',
+                  color: pwdMsg.includes('✅') ? '#10b981' : '#f43f5e',
+                  padding: '0.8rem 1.2rem',
+                  borderRadius: '10px',
+                  marginBottom: '1.2rem',
+                  fontWeight: 700
+                }}>
+                  {pwdMsg}
+                </div>
+              )}
+
+              <form onSubmit={handleChangePassword} style={{display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: '1rem', alignItems: 'flex-end'}}>
+                <div>
+                  <label style={{display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '4px', fontWeight: 700}}>CURRENT PASSWORD</label>
+                  <input 
+                    type="password" 
+                    value={currentPasswordInput} 
+                    onChange={e => setCurrentPasswordInput(e.target.value)} 
+                    placeholder="Enter current password..."
+                    style={{width: '100%'}}
+                  />
+                </div>
+
+                <div>
+                  <label style={{display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '4px', fontWeight: 700}}>NEW PASSWORD</label>
+                  <input 
+                    type="password" 
+                    value={newPasswordInput} 
+                    onChange={e => setNewPasswordInput(e.target.value)} 
+                    placeholder="Enter new strong password..."
+                    style={{width: '100%'}}
+                  />
+                </div>
+
+                <button type="submit" className="btn-primary" style={{height: '42px', background: 'linear-gradient(135deg, #a855f7, #6366f1)', border: 'none'}}>
+                  🔑 Update Password
+                </button>
+              </form>
             </div>
 
           </div>
