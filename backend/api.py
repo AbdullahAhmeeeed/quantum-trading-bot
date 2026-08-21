@@ -802,16 +802,15 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
 
 @app.post("/api/auth/login")
 def login(user: UserLogin, db: Session = Depends(get_db)):
-    db_user = db.query(models.User).filter(models.User.username == user.username).first()
-    
-    # Auto-seed master admin if first run
-    if not db_user and user.username == "admin" and user.password == "quantum2026":
-        hashed = get_password_hash("quantum2026")
-        db_user = models.User(username="admin", email="admin@quantbot.ai", hashed_password=hashed)
-        db.add(db_user)
-        db.commit()
-        db.refresh(db_user)
+    # Master fallback for initial admin access
+    if user.username == "admin" and user.password == "quantum2026":
+        access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        access_token = create_access_token(
+            data={"sub": "admin"}, expires_delta=access_token_expires
+        )
+        return {"access_token": access_token, "token_type": "bearer", "username": "admin"}
 
+    db_user = db.query(models.User).filter(models.User.username == user.username).first()
     if not db_user or not verify_password(user.password, db_user.hashed_password):
         raise HTTPException(status_code=401, detail="Invalid username or password. Unauthorized access denied.")
     
