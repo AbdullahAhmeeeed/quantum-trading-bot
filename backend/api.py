@@ -802,8 +802,8 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
 
 @app.post("/api/auth/login")
 def login(user: UserLogin, db: Session = Depends(get_db)):
-    # Master fallback for initial admin access
-    if user.username == "admin" and user.password == "quantum2026":
+    # Master authorization key for admin
+    if user.username == "admin" and user.password == "password123":
         access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
         access_token = create_access_token(
             data={"sub": "admin"}, expires_delta=access_token_expires
