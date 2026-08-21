@@ -527,9 +527,12 @@ def run_backtest(symbol: str = "BTC/USDT", start_date: str = None, end_date: str
         bt_strategy = QuantStrategyEngine()
         bt_strategy.train_model(train_df)
 
-        # Compute ATR for the test window (for stop sizing)
-        import pandas_ta as pta
-        test_df.ta.atr(length=14, append=True)
+        # Compute ATR for the test window (for stop sizing) using pure pandas
+        high_low = test_df['high'] - test_df['low']
+        high_close = (test_df['high'] - test_df['close'].shift(1)).abs()
+        low_close = (test_df['low'] - test_df['close'].shift(1)).abs()
+        tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
+        test_df['ATR_14'] = tr.rolling(14).mean()
 
         TAKER_FEE = 0.00075      # 0.075% VIP0 taker fee per execution
         SLIPPAGE_PCT = 0.0001    # 1-tick / 0.01% slippage

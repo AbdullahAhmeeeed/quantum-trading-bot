@@ -6,7 +6,6 @@ numpy
 scikit-learn
 yfinance
 textblob
-pandas-ta
 ccxt
 python-jose[cryptography]
 passlib[bcrypt]
