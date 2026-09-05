@@ -8,7 +8,7 @@ _ticker_cache = {}
 
 class DataStreamer:
     def __init__(self, symbol="BTC/USDT", timeframe="1d"):
-        self.exchange = ccxt.binance()
+        self.exchange = ccxt.binance({'timeout': 1500, 'enableRateLimit': True})
         self.symbol = symbol
         self.timeframe = timeframe
 
@@ -73,8 +73,8 @@ class DataStreamer:
         interval_map = {"1m": "1m", "5m": "5m", "15m": "15m", "1h": "1h", "4h": "1h", "1d": "1d"}
         interval = interval_map.get(self.timeframe, "1d")
 
-        # Fetch max or recent history
-        period = "max" if interval == "1d" else "60d"
+        # Fetch max or recent history (1m/5m only supports up to 7d)
+        period = "max" if interval == "1d" else "7d" if interval in ["1m", "2m", "5m"] else "60d"
         df = self._fetch_yfinance(yf_symbol, period=period, interval=interval)
 
         # Fallback to daily if intraday was empty
@@ -86,15 +86,15 @@ class DataStreamer:
             filtered = df[df['timestamp'] >= pd.to_datetime(start_date)]
             if end_date:
                 filtered = filtered[filtered['timestamp'] <= (pd.to_datetime(end_date) + pd.Timedelta(days=1))]
-            # Only apply filter if it contains at least 20 bars; otherwise return the last 100 bars to prevent 1-candle squish!
+            # Only apply filter if it contains at least 10 bars
             if len(filtered) >= 10:
                 return filtered
 
-        if limit <= 150 and len(df) > limit:
+        if limit <= 200 and len(df) > limit:
             return df.iloc[-limit:]
         return df
 
-    def _fetch_yfinance(self, yf_symbol: str, period: str = "60d", interval: str = "1d") -> pd.DataFrame:
+    def _fetch_yfinance(self, yf_symbol: str, period: str = "7d", interval: str = "1d") -> pd.DataFrame:
         try:
             ticker = yf.Ticker(yf_symbol)
             df = ticker.history(period=period, interval=interval)
