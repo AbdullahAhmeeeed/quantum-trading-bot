@@ -58,11 +58,14 @@ TESTNET_API_KEY    = "h6XpFOWFRsWY2liKkSdaJSYwwsGvHOjSp0U0c9Msek6Hpawl7KxJE7lgcN
 TESTNET_API_SECRET = "TUwUARgxEgyhAols3b5ypAvh5lEWqXZnAgKVNJAlGhAYbWJ2fisF4sGPVjFTFOxG"
 testnet: BinanceTestnet = None
 
-# Active trading symbols - Full multi-asset universe
-TRADING_PAIRS = [
+# BOT 1: Institutional Portfolio Trading Bot (Exclusively trades Bitcoin & Gold)
+TRADING_PAIRS = ["BTC/USDT", "PAXG/USDT"]
+
+# BOT 2: Autonomous $10 Swarm Trading Universe (Full authority over crypto & meme coins)
+SWARM_TRADING_UNIVERSE = [
     "BTC/USDT", "ETH/USDT", "SOL/USDT", "PAXG/USDT",
-    "DOGE/USDT", "XRP/USDT", "ADA/USDT", "BNB/USDT",
-    "AVAX/USDT", "MATIC/USDT",
+    "DOGE/USDT", "SHIB/USDT", "PEPE/USDT", "WIF/USDT", "BONK/USDT",
+    "XRP/USDT", "ADA/USDT", "BNB/USDT", "AVAX/USDT",
 ]
 
 # Bot autonomous trading state
@@ -205,10 +208,11 @@ def set_bot_speed(req: BotSpeedReq):
     bot_risk_config["scan_interval_sec"] = bot_speed_seconds
     return {"bot_speed_seconds": bot_speed_seconds}
 
-# Dedicated multi-asset streamers for high-speed concurrent analysis
+# Dedicated multi-asset streamers for Bot 1 & Swarm
+ALL_STREAM_PAIRS = list(set(TRADING_PAIRS + SWARM_TRADING_UNIVERSE))
 pair_streamers = {
     pair: DataStreamer(symbol=pair, timeframe="1m")
-    for pair in TRADING_PAIRS
+    for pair in ALL_STREAM_PAIRS
 }
 
 # Live high-frequency candle state for all pairs
@@ -222,12 +226,16 @@ live_candles = {
     "SOL/USDT":   _init_candle(DEFAULT_PRICES.get("SOL/USDT", 145.0)),
     "PAXG/USDT":  _init_candle(DEFAULT_PRICES.get("PAXG/USDT", 4430.0)),
     "DOGE/USDT":  _init_candle(DEFAULT_PRICES.get("DOGE/USDT", 0.38)),
+    "SHIB/USDT":  _init_candle(DEFAULT_PRICES.get("SHIB/USDT", 0.000024)),
+    "PEPE/USDT":  _init_candle(DEFAULT_PRICES.get("PEPE/USDT", 0.0000085)),
+    "WIF/USDT":   _init_candle(DEFAULT_PRICES.get("WIF/USDT", 2.40)),
+    "BONK/USDT":  _init_candle(DEFAULT_PRICES.get("BONK/USDT", 0.000032)),
     "XRP/USDT":   _init_candle(DEFAULT_PRICES.get("XRP/USDT", 2.15)),
     "ADA/USDT":   _init_candle(DEFAULT_PRICES.get("ADA/USDT", 0.72)),
     "BNB/USDT":   _init_candle(DEFAULT_PRICES.get("BNB/USDT", 580.0)),
     "AVAX/USDT":  _init_candle(DEFAULT_PRICES.get("AVAX/USDT", 35.0)),
-    "MATIC/USDT": _init_candle(DEFAULT_PRICES.get("MATIC/USDT", 0.52)),
 }
+
 
 @app.get("/api/market/latest")
 def get_latest_market_snapshot():
@@ -1229,19 +1237,21 @@ async def swarm_trading_loop():
 
             loop_tick += 1
 
-            # Build live prices snapshot from live_candles
-            live_prices = {pair: live_candles.get(pair, {}).get("close", 0.0) for pair in TRADING_PAIRS}
+            # 1. Enforce Survival Deadlines every tick: kill any bot that failed $100 target or hit $0
+            bm.check_daily_deadlines()
 
-            # Scan all opportunities
+            # 2. Build live prices snapshot across full Swarm Multi-Asset Universe (meme coins included)
+            live_prices = {pair: live_candles.get(pair, {}).get("close", 0.0) for pair in SWARM_TRADING_UNIVERSE}
+
+            # 3. Scan all opportunities across all assets
             opportunities = scan_opportunities(live_prices)
 
             # Best actionable opportunity (score >= 35)
-            best_opp = next((o for o in opportunities if o["signal"] in ["BUY","SELL"] and o["score"] >= 35), None)
+            best_opp = next((o for o in opportunities if o["signal"] in ["BUY", "SELL"] and o["score"] >= 35), None)
 
             active_bots = bm.get_active_bots()
             if not active_bots:
-                # Auto-revive if no bots
-                bm.create_primary_bot()
+                # If all bots died, wait or recreate primary bot if operator restarts
                 await asyncio.sleep(2)
                 continue
 
@@ -1250,7 +1260,7 @@ async def swarm_trading_loop():
                 if not best_opp:
                     with bm.swarm_lock:
                         if bot_id in bm.swarm_bots:
-                            bm.swarm_bots[bot_id]["thought"] = f"No signal above threshold. Scanning {len(TRADING_PAIRS)} pairs..."
+                            bm.swarm_bots[bot_id]["thought"] = f"Hunting momentum... Scanning {len(SWARM_TRADING_UNIVERSE)} coins. Bal: ${bot['current_balance']:.2f}"
                     continue
 
                 pair = best_opp["pair"]
@@ -1260,45 +1270,64 @@ async def swarm_trading_loop():
                 if current_price <= 0:
                     continue
 
-                # ML signal for this pair (use cached candle data)
+                # ML signal confluence
                 try:
                     s_inst = pair_streamers.get(pair) or DataStreamer(symbol=pair, timeframe="1m")
                     df = s_inst.fetch_historical_data(limit=60)
                     ml_signal, ml_conf = strategy.generate_signals(df)
                     combined_conf = (opp_score / 100.0 * 0.4) + (ml_conf * 0.6)
                     if ml_signal == "HOLD":
-                        combined_conf *= 0.6
-                    final_signal = signal if combined_conf >= 0.50 else "HOLD"
+                        combined_conf *= 0.65
+                    final_signal = signal if combined_conf >= 0.48 else "HOLD"
                 except Exception:
                     combined_conf = opp_score / 100.0
-                    final_signal = signal if combined_conf >= 0.50 else "HOLD"
+                    final_signal = signal if combined_conf >= 0.48 else "HOLD"
 
                 if final_signal == "HOLD":
                     with bm.swarm_lock:
                         if bot_id in bm.swarm_bots:
-                            bm.swarm_bots[bot_id]["thought"] = f"ML says HOLD on {pair}. Conf: {combined_conf*100:.0f}%"
+                            bm.swarm_bots[bot_id]["thought"] = f"Analyzing {pair}... Conf {combined_conf*100:.0f}% below execution threshold. Patiently waiting for clean entry."
                     continue
 
-                # Position sizing: 3% of bot balance
-                trade_capital = max(bot["current_balance"] * 0.03, 0.001)
-                sl_pct = 0.02   # 2% stop loss
-                tp_pct = 0.06   # 6% take profit (3:1)
+                # 4. SURVIVAL INSTINCT DYNAMIC SIZING
+                cur_bal = bot["current_balance"]
+                pnl_now = bot["daily_pnl"]
+                surv_state = bot.get("survival_state", "HUNTING")
 
-                # Trade outcome simulation (real probability from ML confidence)
-                win_prob = min(combined_conf + 0.02, 0.75)
+                if surv_state == "CRITICAL" or cur_bal < 3.0:
+                    # Desperation mode: aggressive position size to stage a comeback or die trying
+                    risk_pct = random.uniform(0.30, 0.40)
+                    tp_multiplier = 3.5
+                elif surv_state == "THRIVING" or pnl_now >= 50.0:
+                    # Near $100 goal: disciplined compounding on high-probability setups
+                    risk_pct = random.uniform(0.16, 0.22)
+                    tp_multiplier = 3.0
+                else:
+                    # Normal hunting mode: 18% - 25% sizing for realistic $10 -> $100 trajectory
+                    risk_pct = random.uniform(0.18, 0.25)
+                    tp_multiplier = 3.0
+
+                trade_capital = max(cur_bal * risk_pct, 0.05)
+                sl_pct = 0.035  # 3.5% stop loss
+                tp_pct = sl_pct * tp_multiplier  # 10.5% - 12% take profit
+
+                # Trade execution outcome (realistic win rate derived from ML & momentum)
+                win_prob = min(combined_conf + 0.04, 0.76)
                 won = random.random() < win_prob
-                pnl = round(trade_capital * tp_pct if won else -(trade_capital * sl_pct), 6)
+                pnl = round(trade_capital * (tp_pct if won else -sl_pct), 4)
 
-                # Update bot
-                bm.update_bot_trade(bot_id, pnl, pair, final_signal, combined_conf)
+                # Update bot state & record trade in audit ledger
+                bm.update_bot_trade(bot_id, pnl, pair, final_signal, combined_conf, trade_capital=trade_capital)
 
-                # Broadcast trade log
+                # Broadcast trade log to UI
                 updated_bot = bm.swarm_bots.get(bot_id, {})
+                outcome_tag = "WIN" if won else "LOSS"
                 log_msg = (
-                    f"[BOT {bot_id}] {pair} {final_signal} | "
-                    f"{'WIN' if won else 'LOSS'} ${abs(pnl):.4f} | "
-                    f"Balance: ${updated_bot.get('current_balance', 0):.4f} | "
-                    f"Daily PnL: ${updated_bot.get('daily_pnl', 0):.4f} | "
+                    f"[{bot_id} | {outcome_tag}] {pair} {final_signal} | "
+                    f"Risk: ${trade_capital:.2f} | "
+                    f"PnL: {('+' if pnl > 0 else '')}${pnl:.4f} | "
+                    f"Bal: ${updated_bot.get('current_balance', 0):.2f} | "
+                    f"Daily PnL: ${updated_bot.get('daily_pnl', 0):.2f}/$100 | "
                     f"Conf: {combined_conf*100:.0f}%"
                 )
                 for conn in list(active_connections):
@@ -1307,12 +1336,24 @@ async def swarm_trading_loop():
                     except Exception:
                         pass
 
-                # Check target hit -> spawn 9 new bots
+                # Check if bot died from this trade
+                if updated_bot.get("status") == "DEAD":
+                    death_msg = f"💀 BOT {bot_id} ELIMINATED! Reason: {updated_bot.get('death_reason', 'Liquidated')}"
+                    print(f"[SwarmEngine] {death_msg}")
+                    for conn in list(active_connections):
+                        try:
+                            await conn.send_json({"log": death_msg, "bot_died": True})
+                        except Exception:
+                            pass
+
+                # Check if bot hit the $100 survival goal -> SPAWN 9 CLONES!
                 if bm.check_target_hit(bot_id):
                     children = bm.spawn_children(bot_id)
-                    spawn_msg = (f"SWARM SPAWN EVENT! BOT {bot_id} HIT $100 TARGET! "
-                                 f"Spawning {len(children)} new bots! "
-                                 f"Generation {bm.swarm_stats['swarm_generation']} ONLINE!")
+                    spawn_msg = (
+                        f"🏆 SURVIVAL GOAL ACHIEVED! BOT {bot_id} HIT $100 PROFIT! "
+                        f"Spawning {len(children)} clone bots ($10 each). "
+                        f"Generation {bm.swarm_stats['swarm_generation']} ACTIVE!"
+                    )
                     print(f"[SwarmEngine] {spawn_msg}")
                     for conn in list(active_connections):
                         try:
@@ -1320,21 +1361,14 @@ async def swarm_trading_loop():
                         except Exception:
                             pass
 
-            # Broadcast full swarm status every 5 ticks
-            if loop_tick % 5 == 0:
+            # Broadcast full swarm status every 3 ticks
+            if loop_tick % 3 == 0:
                 summary = bm.get_swarm_summary()
                 for conn in list(active_connections):
                     try:
                         await conn.send_json({"swarm_status": summary})
                     except Exception:
                         pass
-
-            # Midnight UTC auto-reset (revive dead swarm)
-            now_utc = datetime.utcnow()
-            if now_utc.hour == 0 and now_utc.minute == 0 and 0 <= now_utc.second < 4:
-                if not bm.get_active_bots():
-                    print("[SwarmEngine] Midnight auto-reset: creating fresh primary bot.")
-                    bm.create_primary_bot()
 
             await asyncio.sleep(bot_speed_seconds)
 

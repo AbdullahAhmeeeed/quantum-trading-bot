@@ -2049,36 +2049,70 @@ function App() {
 
         {activeTab === 'SWARM' && (
           <div style={{animation: 'fadeIn 0.4s'}}>
-            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem'}}>
-              <h2 style={{margin: 0, fontSize: '1.4rem', fontWeight: 800, color: '#ff9500'}}>
-                🤖 Swarm Command Center
-                <span style={{fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 500, marginLeft: '12px'}}>
-                  $10 → $100/day → $10,000/month
-                </span>
-              </h2>
+            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '1rem'}}>
+              <div>
+                <h2 style={{margin: 0, fontSize: '1.4rem', fontWeight: 800, color: '#ff9500'}}>
+                  🤖 Autonomous Swarm Survival Center
+                </h2>
+                <div style={{fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '4px'}}>
+                  Bot 2 Authority: Starts with $10 → 24h Deadline to hit $100 or DIE → On $100 spawns 9 clones
+                </div>
+              </div>
               <div style={{display: 'flex', gap: '10px'}}>
                 <button
                   onClick={async () => {
                     await fetch(`${API_BASE_URL}/api/swarm/start`, {method:'POST'});
                     fetchSwarmData();
+                    playSound('SUCCESS');
                   }}
                   style={{padding:'8px 18px', background:'linear-gradient(135deg, #ff6400, #ff9500)', border:'none',
                     borderRadius:'8px', color:'#fff', fontWeight:800, cursor:'pointer', fontSize:'0.85rem'}}
                 >
-                  🚀 Start Swarm
+                  🚀 Deploy Swarm ($10)
                 </button>
                 <button
                   onClick={async () => {
-                    if (window.confirm('Reset swarm? All bots will be killed and a new primary bot started with $10.')) {
+                    if (window.confirm('Reset swarm? All dead bots will be cleared and Bot #1 restarted with fresh $10.')) {
                       await fetch(`${API_BASE_URL}/api/swarm/reset`, {method:'POST'});
                       fetchSwarmData();
+                      playSound('ALERT');
                     }
                   }}
                   style={{padding:'8px 18px', background:'rgba(244,63,94,0.2)', border:'1px solid rgba(244,63,94,0.4)',
                     borderRadius:'8px', color:'#f43f5e', fontWeight:800, cursor:'pointer', fontSize:'0.85rem'}}
                 >
-                  🔄 Daily Reset
+                  🔄 Daily Reset ($10 Seed)
                 </button>
+              </div>
+            </div>
+
+            {/* Two-Bot System Architecture Banner */}
+            <div style={{
+              background: 'linear-gradient(135deg, rgba(255,100,0,0.12), rgba(34,211,238,0.08))',
+              border: '1px solid rgba(255,100,0,0.3)',
+              borderRadius: '12px',
+              padding: '0.9rem 1.2rem',
+              marginBottom: '1.4rem',
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+              gap: '1rem',
+              fontSize: '0.82rem'
+            }}>
+              <div style={{borderRight: '1px solid rgba(255,255,255,0.08)', paddingRight: '1rem'}}>
+                <div style={{fontWeight: 800, color: 'var(--accent-cyan)', marginBottom: '4px'}}>
+                  ⚡ BOT 1: Institutional Portfolio Bot
+                </div>
+                <div style={{color: 'var(--text-muted)', lineHeight: '1.4'}}>
+                  Exclusively trades <strong>Bitcoin & Gold</strong> on the Primary Portfolio with ATR Trailing Stops, Risk Parity, and Circuit Breakers.
+                </div>
+              </div>
+              <div>
+                <div style={{fontWeight: 800, color: '#ff9500', marginBottom: '4px'}}>
+                  ⚔️ BOT 2: Autonomous $10 Swarm Bot (Survival Instinct)
+                </div>
+                <div style={{color: 'var(--text-muted)', lineHeight: '1.4'}}>
+                  Full authority across <strong>Meme Coins & Crypto</strong> (DOGE, PEPE, SHIB, SOL, etc.). Must make $100 in 24h or die. Spawns 9 clones on $100.
+                </div>
               </div>
             </div>
 
@@ -2086,15 +2120,15 @@ function App() {
             <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(160px, 1fr))', gap:'1rem', marginBottom:'1.5rem'}}>
               {[
                 { label: 'Active Bots', value: swarmStatus?.active_count ?? 0, color: '#10b981', icon: '🤖' },
-                { label: 'Dead Today', value: swarmStatus?.dead_count ?? 0, color: '#f43f5e', icon: '💀' },
-                { label: 'Targets Hit', value: swarmStatus?.target_hit_count ?? 0, color: '#ff9500', icon: '🎯' },
+                { label: 'Dead Bots (Failed/Wiped)', value: swarmStatus?.dead_count ?? 0, color: '#f43f5e', icon: '💀' },
+                { label: 'Targets Hit ($100)', value: swarmStatus?.target_hit_count ?? 0, color: '#ff9500', icon: '🎯' },
                 { label: 'Total PnL Today', value: `$${(swarmStatus?.total_pnl_today ?? 0).toFixed(4)}`, color: (swarmStatus?.total_pnl_today ?? 0) >= 0 ? '#10b981' : '#f43f5e', icon: '💰' },
-                { label: 'Generation', value: `Gen ${swarmStatus?.swarm_generation ?? 1}`, color: '#818cf8', icon: '🧬' },
-                { label: 'Progress to $10k', value: `${(swarmStatus?.progress_to_10k_pct ?? 0).toFixed(4)}%`, color: '#22d3ee', icon: '📈' },
+                { label: 'Swarm Generation', value: `Gen ${swarmStatus?.swarm_generation ?? 1}`, color: '#818cf8', icon: '🧬' },
+                { label: 'Progress to $10k/mo', value: `${(swarmStatus?.progress_to_10k_pct ?? 0).toFixed(4)}%`, color: '#22d3ee', icon: '📈' },
               ].map((stat, i) => (
                 <div key={i} className="glass-card" style={{textAlign:'center', padding:'1rem'}}>
                   <div style={{fontSize:'1.5rem', marginBottom:'0.3rem'}}>{stat.icon}</div>
-                  <div style={{fontSize:'1.4rem', fontWeight:900, color: stat.color}}>{stat.value}</div>
+                  <div style={{fontSize:'1.3rem', fontWeight:900, color: stat.color}}>{stat.value}</div>
                   <div style={{fontSize:'0.72rem', color:'var(--text-muted)', fontWeight:600, marginTop:'0.2rem'}}>{stat.label}</div>
                 </div>
               ))}
@@ -2102,58 +2136,87 @@ function App() {
 
             {/* Bot Swarm Grid */}
             <div className="glass-card" style={{marginBottom:'1.5rem'}}>
-              <div style={{fontSize:'0.85rem', fontWeight:800, color:'var(--text-muted)', marginBottom:'1rem', letterSpacing:'0.1em'}}>
-                BOT SWARM — INDIVIDUAL PERFORMANCE
+              <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'1rem'}}>
+                <div style={{fontSize:'0.85rem', fontWeight:800, color:'var(--text-muted)', letterSpacing:'0.1em'}}>
+                  BOT SWARM — INDIVIDUAL SURVIVAL PERFORMANCE
+                </div>
+                <div style={{fontSize:'0.72rem', color:'var(--text-dim)'}}>
+                  Auto-checks 24h deadline & zero-balance liquidation every tick
+                </div>
               </div>
+
               {!swarmStatus || swarmStatus.bots?.length === 0 ? (
                 <div style={{textAlign:'center', padding:'2rem', color:'var(--text-muted)'}}>
                   <div style={{fontSize:'2rem', marginBottom:'0.5rem'}}>🤖</div>
-                  <div>No bots active. Click <strong>Start Swarm</strong> to deploy Bot #1 with $10.</div>
+                  <div>No bots deployed. Click <strong>Deploy Swarm ($10)</strong> to begin!</div>
                 </div>
               ) : (
-                <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(280px, 1fr))', gap:'0.8rem'}}>
+                <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(300px, 1fr))', gap:'0.9rem'}}>
                   {swarmStatus.bots.map((bot, i) => {
                     const isActive = bot.status === 'ACTIVE';
                     const isDead = bot.status === 'DEAD';
                     const isWinner = bot.status === 'TARGET_HIT';
-                    const progress = Math.min((bot.daily_pnl / bot.daily_target) * 100, 100);
+                    const progress = Math.min(Math.max(0, (bot.daily_pnl / bot.daily_target) * 100), 100);
+                    const survState = bot.survival_state || (isDead ? 'DEAD' : isWinner ? 'TARGET_ACHIEVED' : 'HUNTING');
                     return (
                       <div key={i} style={{
-                        background: isDead ? 'rgba(244,63,94,0.08)' : isWinner ? 'rgba(255,149,0,0.15)' : 'rgba(16,185,129,0.06)',
-                        border: `1px solid ${isDead ? 'rgba(244,63,94,0.3)' : isWinner ? 'rgba(255,149,0,0.5)' : 'rgba(16,185,129,0.2)'}`,
-                        borderRadius:'12px', padding:'0.9rem', position:'relative'
+                        background: isDead ? 'rgba(244,63,94,0.06)' : isWinner ? 'rgba(255,149,0,0.12)' : 'rgba(16,185,129,0.05)',
+                        border: `1px solid ${isDead ? 'rgba(244,63,94,0.3)' : isWinner ? 'rgba(255,149,0,0.45)' : 'rgba(16,185,129,0.25)'}`,
+                        borderRadius:'12px', padding:'1rem', position:'relative'
                       }}>
-                        <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'0.5rem'}}>
-                          <div style={{fontWeight:800, fontSize:'0.9rem', color: isDead ? '#f43f5e' : isWinner ? '#ff9500' : '#10b981'}}>
-                            {isActive ? '🟢' : isDead ? '💀' : '🏆'} Bot #{bot.bot_number}
-                            <span style={{fontSize:'0.72rem', color:'var(--text-dim)', marginLeft:'6px'}}>G{bot.generation}</span>
+                        <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'0.6rem'}}>
+                          <div>
+                            <span style={{fontWeight:800, fontSize:'0.92rem', color: isDead ? '#f43f5e' : isWinner ? '#ff9500' : '#10b981'}}>
+                              {isActive ? '🟢' : isDead ? '💀' : '🏆'} Bot #{bot.bot_number}
+                            </span>
+                            <span style={{fontSize:'0.7rem', color:'var(--text-dim)', marginLeft:'6px'}}>G{bot.generation}</span>
                           </div>
-                          <span style={{
-                            fontSize:'0.68rem', fontWeight:800, padding:'2px 8px', borderRadius:'6px',
-                            background: isDead ? 'rgba(244,63,94,0.2)' : isWinner ? 'rgba(255,149,0,0.2)' : 'rgba(16,185,129,0.15)',
-                            color: isDead ? '#f43f5e' : isWinner ? '#ff9500' : '#10b981'
-                          }}>
-                            {bot.status}
+                          <div style={{display:'flex', gap:'5px', alignItems:'center'}}>
+                            <span style={{
+                              fontSize:'0.65rem', fontWeight:800, padding:'2px 7px', borderRadius:'5px',
+                              background: survState === 'CRITICAL' ? 'rgba(244,63,94,0.25)' : survState === 'THRIVING' ? 'rgba(255,149,0,0.25)' : 'rgba(16,185,129,0.15)',
+                              color: survState === 'CRITICAL' ? '#f43f5e' : survState === 'THRIVING' ? '#ff9500' : '#10b981'
+                            }}>
+                              {survState === 'CRITICAL' ? '⚠️ CRITICAL' : survState === 'THRIVING' ? '🔥 THRIVING' : survState}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Survival Deadline Countdown */}
+                        <div style={{
+                          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                          background: 'rgba(0,0,0,0.25)', borderRadius: '6px', padding: '4px 8px', marginBottom: '0.6rem',
+                          fontSize: '0.74rem'
+                        }}>
+                          <span style={{color: 'var(--text-muted)'}}>⏱️ Survival Clock:</span>
+                          <span style={{fontWeight: 800, color: isDead ? '#f43f5e' : '#22d3ee', fontFamily: 'monospace'}}>
+                            {bot.countdown || '24h 00m 00s'}
                           </span>
                         </div>
 
                         <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0.4rem', fontSize:'0.78rem', marginBottom:'0.6rem'}}>
-                          <div>Balance: <span style={{fontWeight:800, color:'#22d3ee'}}>${bot.current_balance?.toFixed(4)}</span></div>
-                          <div>PnL: <span style={{fontWeight:800, color: bot.daily_pnl >= 0 ? '#10b981' : '#f43f5e'}}>${bot.daily_pnl?.toFixed(4)}</span></div>
+                          <div>Capital: <span style={{fontWeight:800, color:'#22d3ee'}}>${bot.current_balance?.toFixed(4)}</span></div>
+                          <div>Daily PnL: <span style={{fontWeight:800, color: bot.daily_pnl >= 0 ? '#10b981' : '#f43f5e'}}>{bot.daily_pnl >= 0 ? '+' : ''}${bot.daily_pnl?.toFixed(4)}</span></div>
                           <div>Trades: <span style={{fontWeight:700}}>{bot.trades_today || 0}</span></div>
-                          <div>W/L: <span style={{fontWeight:700, color:'#10b981'}}>{bot.winning_trades || 0}</span>/<span style={{color:'#f43f5e'}}>{bot.losing_trades || 0}</span></div>
+                          <div>Record: <span style={{fontWeight:700, color:'#10b981'}}>{bot.winning_trades || 0}W</span> / <span style={{color:'#f43f5e'}}>{bot.losing_trades || 0}L</span></div>
                         </div>
 
-                        {/* Progress bar */}
-                        <div style={{background:'rgba(255,255,255,0.05)', borderRadius:'4px', height:'5px', marginBottom:'0.5rem'}}>
-                          <div style={{
-                            width:`${progress}%`, height:'100%', borderRadius:'4px',
-                            background: isDead ? '#f43f5e' : isWinner ? '#ff9500' : `linear-gradient(90deg, #10b981, #22d3ee)`,
-                            transition:'width 0.5s ease'
-                          }} />
+                        {/* $100 Goal Progress Bar */}
+                        <div style={{marginBottom:'0.5rem'}}>
+                          <div style={{display:'flex', justifyContent:'space-between', fontSize:'0.68rem', color:'var(--text-dim)', marginBottom:'2px'}}>
+                            <span>Progress to $100:</span>
+                            <span style={{fontWeight:700}}>{progress.toFixed(1)}%</span>
+                          </div>
+                          <div style={{background:'rgba(255,255,255,0.06)', borderRadius:'4px', height:'6px'}}>
+                            <div style={{
+                              width:`${progress}%`, height:'100%', borderRadius:'4px',
+                              background: isDead ? '#f43f5e' : isWinner ? '#ff9500' : `linear-gradient(90deg, #10b981, #22d3ee)`,
+                              transition:'width 0.5s ease'
+                            }} />
+                          </div>
                         </div>
 
-                        <div style={{fontSize:'0.7rem', color:'var(--text-dim)', lineHeight:'1.3', wordBreak:'break-word'}}>
+                        <div style={{fontSize:'0.72rem', color:'var(--text-dim)', lineHeight:'1.35', wordBreak:'break-word', minHeight:'28px'}}>
                           {bot.thought}
                         </div>
 
@@ -2163,8 +2226,9 @@ function App() {
                               await fetch(`${API_BASE_URL}/api/swarm/kill/${bot.id}`, {method:'POST'});
                               fetchSwarmData();
                             }}
+                            title="Kill Bot"
                             style={{position:'absolute', top:'8px', right:'8px', background:'transparent',
-                              border:'none', color:'rgba(244,63,94,0.5)', cursor:'pointer', fontSize:'0.75rem'}}
+                              border:'none', color:'rgba(244,63,94,0.5)', cursor:'pointer', fontSize:'0.8rem'}}
                           >
                             ✕
                           </button>
@@ -2176,10 +2240,64 @@ function App() {
               )}
             </div>
 
-            {/* Live Market Opportunities */}
+            {/* Recent Swarm Autonomous Trades Audit Ledger */}
+            {swarmStatus?.recent_trades && swarmStatus.recent_trades.length > 0 && (
+              <div className="glass-card" style={{marginBottom:'1.5rem'}}>
+                <div style={{fontSize:'0.85rem', fontWeight:800, color:'var(--text-muted)', marginBottom:'1rem', letterSpacing:'0.1em'}}>
+                  SWARM AUTONOMOUS TRADE LEDGER (BOT 2 EXECUTIONS)
+                </div>
+                <div style={{overflowX:'auto'}}>
+                  <table style={{width:'100%', borderCollapse:'collapse', fontSize:'0.8rem'}}>
+                    <thead>
+                      <tr style={{borderBottom:'1px solid var(--border-subtle)'}}>
+                        {['Time', 'Bot', 'Pair', 'Side', 'Risked', 'PnL', 'Result', 'Balance After'].map(h => (
+                          <th key={h} style={{padding:'0.5rem 0.8rem', textAlign:'left', color:'var(--text-muted)', fontWeight:700, fontSize:'0.72rem'}}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {swarmStatus.recent_trades.slice(0, 15).map((tr, i) => (
+                        <tr key={i} style={{borderBottom:'1px solid rgba(255,255,255,0.04)'}}>
+                          <td style={{padding:'0.5rem 0.8rem', color:'var(--text-dim)', fontSize:'0.72rem'}}>
+                            {tr.time ? new Date(tr.time).toLocaleTimeString() : 'Live'}
+                          </td>
+                          <td style={{padding:'0.5rem 0.8rem', fontWeight:700, color:'var(--accent-cyan)'}}>{tr.bot_id}</td>
+                          <td style={{padding:'0.5rem 0.8rem', fontWeight:800}}>{tr.pair}</td>
+                          <td style={{padding:'0.5rem 0.8rem'}}>
+                            <span style={{
+                              padding:'2px 6px', borderRadius:'4px', fontSize:'0.7rem', fontWeight:800,
+                              background: tr.signal === 'BUY' ? 'rgba(16,185,129,0.2)' : 'rgba(244,63,94,0.2)',
+                              color: tr.signal === 'BUY' ? '#10b981' : '#f43f5e'
+                            }}>
+                              {tr.signal}
+                            </span>
+                          </td>
+                          <td style={{padding:'0.5rem 0.8rem'}}>${tr.capital_risked?.toFixed(2)}</td>
+                          <td style={{padding:'0.5rem 0.8rem', fontWeight:800, color: tr.pnl >= 0 ? '#10b981' : '#f43f5e'}}>
+                            {tr.pnl >= 0 ? '+' : ''}${tr.pnl?.toFixed(4)}
+                          </td>
+                          <td style={{padding:'0.5rem 0.8rem'}}>
+                            <span style={{
+                              padding:'2px 6px', borderRadius:'4px', fontSize:'0.7rem', fontWeight:800,
+                              background: tr.result === 'WIN' ? 'rgba(16,185,129,0.15)' : 'rgba(244,63,94,0.15)',
+                              color: tr.result === 'WIN' ? '#10b981' : '#f43f5e'
+                            }}>
+                              {tr.result}
+                            </span>
+                          </td>
+                          <td style={{padding:'0.5rem 0.8rem', fontFamily:'monospace'}}>${tr.bot_balance_after?.toFixed(4)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Live Market Opportunities Scanner */}
             <div className="glass-card" style={{marginBottom:'1.5rem'}}>
               <div style={{fontSize:'0.85rem', fontWeight:800, color:'var(--text-muted)', marginBottom:'1rem', letterSpacing:'0.1em'}}>
-                LIVE MARKET SCANNER — TOP OPPORTUNITIES
+                LIVE MULTI-ASSET & MEME COIN SCANNER — TOP OPPORTUNITIES
               </div>
               <div style={{overflowX:'auto'}}>
                 <table style={{width:'100%', borderCollapse:'collapse', fontSize:'0.82rem'}}>
@@ -2230,28 +2348,29 @@ function App() {
               </div>
             </div>
 
-            {/* Swarm Bot Log (from main botLogs) */}
+            {/* Swarm Live Telemetry Stream */}
             <div className="glass-card">
               <div style={{fontSize:'0.85rem', fontWeight:800, color:'var(--text-muted)', marginBottom:'0.8rem', letterSpacing:'0.1em'}}>
-                SWARM LIVE LOGS
+                SWARM LIVE TELEMETRY LOGS
               </div>
               <div style={{height:'200px', overflowY:'auto', fontFamily:'monospace', fontSize:'0.78rem', lineHeight:'1.6'}}>
-                {botLogs.filter(l => l.includes('BOT-') || l.includes('SPAWN') || l.includes('SWARM')).slice(0, 30).map((log, i) => (
+                {botLogs.filter(l => l.includes('BOT-') || l.includes('SPAWN') || l.includes('SWARM') || l.includes('ELIMINATED')).slice(0, 40).map((log, i) => (
                   <div key={i} style={{
-                    color: log.includes('WIN') ? '#10b981' : log.includes('LOSS') || log.includes('DEAD') ? '#f43f5e' :
-                           log.includes('SPAWN') ? '#ff9500' : 'var(--text-muted)',
+                    color: log.includes('WIN') ? '#10b981' : (log.includes('LOSS') || log.includes('ELIMINATED') || log.includes('DEAD')) ? '#f43f5e' :
+                           log.includes('SPAWN') || log.includes('ACHIEVED') ? '#ff9500' : 'var(--text-muted)',
                     borderBottom: '1px solid rgba(255,255,255,0.03)', padding: '2px 0'
                   }}>
                     {log}
                   </div>
                 ))}
-                {botLogs.filter(l => l.includes('BOT-') || l.includes('SPAWN') || l.includes('SWARM')).length === 0 && (
+                {botLogs.filter(l => l.includes('BOT-') || l.includes('SPAWN') || l.includes('SWARM') || l.includes('ELIMINATED')).length === 0 && (
                   <div style={{color:'var(--text-dim)'}}>Waiting for swarm activity... Start the swarm to see live logs.</div>
                 )}
               </div>
             </div>
           </div>
         )}
+
 
       </div>
     </div>
