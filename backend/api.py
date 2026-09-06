@@ -1184,7 +1184,7 @@ def kill_swarm_bot(bot_id: str):
 @app.get("/api/market/opportunities")
 def get_market_opportunities():
     """Returns ranked trading opportunities across all pairs."""
-    live_prices = {pair: live_candles.get(pair, {}).get("close", 0) for pair in TRADING_PAIRS}
+    live_prices = {pair: live_candles.get(pair, {}).get("close", 0) for pair in SWARM_TRADING_UNIVERSE}
     opps = scan_opportunities(live_prices)
     return {"opportunities": opps, "top_pick": opps[0] if opps else None, "timestamp": int(time.time())}
 
@@ -1240,10 +1240,29 @@ async def swarm_trading_loop():
             # 1. Enforce Survival Deadlines every tick: kill any bot that failed $100 target or hit $0
             bm.check_daily_deadlines()
 
-            # 2. Build live prices snapshot across full Swarm Multi-Asset Universe (meme coins included)
+            # 2. Generate live high-frequency micro-ticks for all assets in SWARM_TRADING_UNIVERSE
+            now_sec = int(time.time())
+            for p in SWARM_TRADING_UNIVERSE:
+                if p in ["BTC/USDT", "PAXG/USDT"]:
+                    continue  # Bot 1 loop handles BTC and PAXG
+                base_p = DEFAULT_PRICES.get(p, 1.0)
+                prev_c = live_candles.get(p, {}).get("close", base_p)
+                vol_mult = 0.0022 if p in ["PEPE/USDT", "DOGE/USDT", "SHIB/USDT", "WIF/USDT", "BONK/USDT"] else 0.0008
+                delta = (random.random() - 0.485) * (base_p * vol_mult)
+                new_c = max(0.0000001, prev_c + delta)
+                live_candles[p] = {
+                    "open": prev_c,
+                    "high": max(prev_c, new_c),
+                    "low": min(prev_c, new_c),
+                    "close": new_c,
+                    "time": now_sec,
+                    "volume": round(random.uniform(30.0, 300.0), 1)
+                }
+
+            # 3. Build live prices snapshot across full Swarm Multi-Asset Universe
             live_prices = {pair: live_candles.get(pair, {}).get("close", 0.0) for pair in SWARM_TRADING_UNIVERSE}
 
-            # 3. Scan all opportunities across all assets
+            # 4. Scan all opportunities across all assets
             opportunities = scan_opportunities(live_prices)
 
             # Best actionable opportunity (score >= 35)
