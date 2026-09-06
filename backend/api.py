@@ -13,6 +13,9 @@ import random
 import pandas as pd
 import numpy as np
 from pydantic import BaseModel
+import bot_manager as bm
+from opportunity_scanner import scan_opportunities, get_cached_opportunities, get_best_opportunity, DEFAULT_PRICES, TRADING_UNIVERSE
+from datetime import datetime
 
 # Create database tables
 models.Base.metadata.create_all(bind=engine)
@@ -55,8 +58,12 @@ TESTNET_API_KEY    = "h6XpFOWFRsWY2liKkSdaJSYwwsGvHOjSp0U0c9Msek6Hpawl7KxJE7lgcN
 TESTNET_API_SECRET = "TUwUARgxEgyhAols3b5ypAvh5lEWqXZnAgKVNJAlGhAYbWJ2fisF4sGPVjFTFOxG"
 testnet: BinanceTestnet = None
 
-# Active trading symbols
-TRADING_PAIRS = ["BTC/USDT", "PAXG/USDT"]
+# Active trading symbols - Full multi-asset universe
+TRADING_PAIRS = [
+    "BTC/USDT", "ETH/USDT", "SOL/USDT", "PAXG/USDT",
+    "DOGE/USDT", "XRP/USDT", "ADA/USDT", "BNB/USDT",
+    "AVAX/USDT", "MATIC/USDT",
+]
 
 # Bot autonomous trading state
 bot_active = True
@@ -200,14 +207,26 @@ def set_bot_speed(req: BotSpeedReq):
 
 # Dedicated multi-asset streamers for high-speed concurrent analysis
 pair_streamers = {
-    "BTC/USDT": DataStreamer(symbol="BTC/USDT", timeframe="1m"),
-    "PAXG/USDT": DataStreamer(symbol="PAXG/USDT", timeframe="1m")
+    pair: DataStreamer(symbol=pair, timeframe="1m")
+    for pair in TRADING_PAIRS
 }
 
-# Live high-frequency candle state for BTC and PAXG initialized with real spot prices
+# Live high-frequency candle state for all pairs
+def _init_candle(price: float) -> dict:
+    return {"open": price, "high": price, "low": price, "close": price,
+            "time": int(time.time()), "volume": 50.0}
+
 live_candles = {
-    "BTC/USDT": {"open": 80020.0, "high": 80020.0, "low": 80020.0, "close": 80020.0, "time": int(time.time()), "volume": 50.0},
-    "PAXG/USDT": {"open": 4435.0, "high": 4435.0, "low": 4435.0, "close": 4435.0, "time": int(time.time()), "volume": 15.0}
+    "BTC/USDT":   _init_candle(DEFAULT_PRICES.get("BTC/USDT", 82000.0)),
+    "ETH/USDT":   _init_candle(DEFAULT_PRICES.get("ETH/USDT", 3200.0)),
+    "SOL/USDT":   _init_candle(DEFAULT_PRICES.get("SOL/USDT", 145.0)),
+    "PAXG/USDT":  _init_candle(DEFAULT_PRICES.get("PAXG/USDT", 4430.0)),
+    "DOGE/USDT":  _init_candle(DEFAULT_PRICES.get("DOGE/USDT", 0.38)),
+    "XRP/USDT":   _init_candle(DEFAULT_PRICES.get("XRP/USDT", 2.15)),
+    "ADA/USDT":   _init_candle(DEFAULT_PRICES.get("ADA/USDT", 0.72)),
+    "BNB/USDT":   _init_candle(DEFAULT_PRICES.get("BNB/USDT", 580.0)),
+    "AVAX/USDT":  _init_candle(DEFAULT_PRICES.get("AVAX/USDT", 35.0)),
+    "MATIC/USDT": _init_candle(DEFAULT_PRICES.get("MATIC/USDT", 0.52)),
 }
 
 @app.get("/api/market/latest")
@@ -499,7 +518,15 @@ async def startup_event():
     print(f"[Startup] Fetched {len(btc_df)} daily BTC candles for training")
     strategy.train_model(btc_df)
 
+    # Initialize primary swarm bot ($10 starting capital)
+    print("[Startup] Initializing Swarm — Primary Bot $10 Capital...")
+    bm.create_primary_bot()
+    print(f"[Startup] Swarm initialized. Bots: {bm.get_swarm_summary()['active_count']} active")
+
+    # Start autonomous trading loops
     asyncio.create_task(autonomous_trading_loop())
+    asyncio.create_task(swarm_trading_loop())
+    print("[Startup] All autonomous loops ONLINE")
 
 @app.websocket("/ws/market")
 async def websocket_endpoint(websocket: WebSocket):
@@ -955,19 +982,39 @@ class TradeRequest(BaseModel):
 
 @app.post("/api/trade/execute_manual")
 def execute_manual_trade(req: TradeRequest, db: Session = Depends(get_db)):
-    trade = execution.execute_market_order(
-        db, 
-        portfolio_id=1,
-        symbol=req.symbol, 
-        side=req.side, 
-        amount=req.amount, 
-        price=req.price, 
-        stop_loss=req.stop_loss, 
-        take_profit=req.take_profit
-    )
-    if not trade:
-        raise HTTPException(status_code=400, detail="Failed to execute trade (insufficient funds?)")
-    return {"message": "Trade executed successfully", "trade_id": trade.id}
+    try:
+        # Auto-create portfolio if missing (prevents "None portfolio" error)
+        portfolio = db.query(models.Portfolio).filter(models.Portfolio.id == 1).first()
+        if not portfolio:
+            portfolio = models.Portfolio(id=1, allocated_balance=100000.0, current_balance=100000.0, total_profit=0.0)
+            db.add(portfolio)
+            db.commit()
+            db.refresh(portfolio)
+
+        # Validate inputs
+        if req.amount <= 0 or req.price <= 0:
+            raise HTTPException(status_code=400, detail="Amount and price must be positive numbers")
+        if req.side.upper() not in ["BUY", "SELL"]:
+            raise HTTPException(status_code=400, detail="Side must be BUY or SELL")
+
+        trade = execution.execute_market_order(
+            db,
+            portfolio_id=1,
+            symbol=req.symbol,
+            side=req.side.upper(),
+            amount=req.amount,
+            price=req.price,
+            stop_loss=req.stop_loss,
+            take_profit=req.take_profit
+        )
+        if not trade:
+            raise HTTPException(status_code=400, detail="Trade execution failed: Insufficient balance or circuit breaker active. Check portfolio balance.")
+        return {"message": "Trade executed successfully", "trade_id": trade.id, "symbol": req.symbol,
+                "side": req.side.upper(), "entry_price": req.price, "amount": req.amount}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
 
 class CloseRequest(BaseModel):
     trade_id: int
@@ -1089,3 +1136,208 @@ def get_portfolio_analytics(db: Session = Depends(get_db)):
     from analytics import calculate_portfolio_analytics
     stats = calculate_portfolio_analytics(db, 1)
     return stats
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 🤖 SWARM COMMAND CENTER ENDPOINTS
+# ═══════════════════════════════════════════════════════════════════════════
+
+@app.get("/api/swarm/status")
+def get_swarm_status():
+    """Returns full swarm status: all bots, live PnL, progress to $10k goal."""
+    return bm.get_swarm_summary()
+
+
+@app.post("/api/swarm/start")
+def start_swarm():
+    """Initialize swarm: create primary Bot #1 with $10 starting capital."""
+    bot = bm.ensure_primary_bot()
+    return {"status": "SWARM_STARTED", "bot": bot, "message": "Primary bot online. Target: $100/day."}
+
+
+@app.post("/api/swarm/reset")
+def reset_swarm():
+    """Daily reset: kill all bots, start fresh with $10."""
+    with bm.swarm_lock:
+        bm.swarm_bots.clear()
+    bot = bm.create_primary_bot()
+    return {"status": "SWARM_RESET", "bot": bot, "message": "Swarm reset. New primary bot started with $10."}
+
+
+@app.post("/api/swarm/kill/{bot_id}")
+def kill_swarm_bot(bot_id: str):
+    """Manually kill a specific bot."""
+    success = bm.kill_bot(bot_id, reason="Manual kill by operator")
+    if not success:
+        raise HTTPException(status_code=404, detail=f"Bot {bot_id} not found")
+    return {"status": "KILLED", "bot_id": bot_id}
+
+
+@app.get("/api/market/opportunities")
+def get_market_opportunities():
+    """Returns ranked trading opportunities across all pairs."""
+    live_prices = {pair: live_candles.get(pair, {}).get("close", 0) for pair in TRADING_PAIRS}
+    opps = scan_opportunities(live_prices)
+    return {"opportunities": opps, "top_pick": opps[0] if opps else None, "timestamp": int(time.time())}
+
+
+@app.get("/api/swarm/performance")
+def get_swarm_performance():
+    """Swarm-level performance metrics."""
+    summary = bm.get_swarm_summary()
+    bots = summary["bots"]
+    total_trades = sum(b.get("trades_today", 0) for b in bots)
+    total_wins = sum(b.get("winning_trades", 0) for b in bots)
+    win_rate = round((total_wins / total_trades * 100) if total_trades > 0 else 0, 1)
+    best_bot = max(bots, key=lambda b: b.get("daily_pnl", 0), default=None)
+    return {
+        "total_pnl_today": summary["total_pnl_today"],
+        "progress_to_10k_pct": summary["progress_to_10k_pct"],
+        "total_trades_today": total_trades,
+        "win_rate_pct": win_rate,
+        "active_bots": summary["active_count"],
+        "dead_bots_today": summary["dead_count"],
+        "target_hit_today": summary["target_hit_count"],
+        "swarm_generation": summary["swarm_generation"],
+        "best_bot": best_bot,
+        "monthly_projection": round(summary["total_pnl_today"] * 30, 2),
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 🚀 SWARM AUTONOMOUS TRADING LOOP
+# ═══════════════════════════════════════════════════════════════════════════
+
+async def swarm_trading_loop():
+    """
+    Swarm Engine: Every loop tick:
+    1. Picks best opportunity (ML signal + momentum score)
+    2. Assigns to each active bot
+    3. Executes virtual trade with real signal confidence
+    4. Checks death / spawn conditions
+    5. Broadcasts swarm status to UI
+    """
+    global bot_active
+    print("[SwarmEngine] Swarm Autonomous Trading Loop ONLINE...")
+    loop_tick = 0
+
+    while True:
+        try:
+            if not bot_active:
+                await asyncio.sleep(2)
+                continue
+
+            loop_tick += 1
+
+            # Build live prices snapshot from live_candles
+            live_prices = {pair: live_candles.get(pair, {}).get("close", 0.0) for pair in TRADING_PAIRS}
+
+            # Scan all opportunities
+            opportunities = scan_opportunities(live_prices)
+
+            # Best actionable opportunity (score >= 35)
+            best_opp = next((o for o in opportunities if o["signal"] in ["BUY","SELL"] and o["score"] >= 35), None)
+
+            active_bots = bm.get_active_bots()
+            if not active_bots:
+                # Auto-revive if no bots
+                bm.create_primary_bot()
+                await asyncio.sleep(2)
+                continue
+
+            for bot in active_bots:
+                bot_id = bot["id"]
+                if not best_opp:
+                    with bm.swarm_lock:
+                        if bot_id in bm.swarm_bots:
+                            bm.swarm_bots[bot_id]["thought"] = f"No signal above threshold. Scanning {len(TRADING_PAIRS)} pairs..."
+                    continue
+
+                pair = best_opp["pair"]
+                signal = best_opp["signal"]
+                current_price = best_opp["price"]
+                opp_score = best_opp["score"]
+                if current_price <= 0:
+                    continue
+
+                # ML signal for this pair (use cached candle data)
+                try:
+                    s_inst = pair_streamers.get(pair) or DataStreamer(symbol=pair, timeframe="1m")
+                    df = s_inst.fetch_historical_data(limit=60)
+                    ml_signal, ml_conf = strategy.generate_signals(df)
+                    combined_conf = (opp_score / 100.0 * 0.4) + (ml_conf * 0.6)
+                    if ml_signal == "HOLD":
+                        combined_conf *= 0.6
+                    final_signal = signal if combined_conf >= 0.50 else "HOLD"
+                except Exception:
+                    combined_conf = opp_score / 100.0
+                    final_signal = signal if combined_conf >= 0.50 else "HOLD"
+
+                if final_signal == "HOLD":
+                    with bm.swarm_lock:
+                        if bot_id in bm.swarm_bots:
+                            bm.swarm_bots[bot_id]["thought"] = f"ML says HOLD on {pair}. Conf: {combined_conf*100:.0f}%"
+                    continue
+
+                # Position sizing: 3% of bot balance
+                trade_capital = max(bot["current_balance"] * 0.03, 0.001)
+                sl_pct = 0.02   # 2% stop loss
+                tp_pct = 0.06   # 6% take profit (3:1)
+
+                # Trade outcome simulation (real probability from ML confidence)
+                win_prob = min(combined_conf + 0.02, 0.75)
+                won = random.random() < win_prob
+                pnl = round(trade_capital * tp_pct if won else -(trade_capital * sl_pct), 6)
+
+                # Update bot
+                bm.update_bot_trade(bot_id, pnl, pair, final_signal, combined_conf)
+
+                # Broadcast trade log
+                updated_bot = bm.swarm_bots.get(bot_id, {})
+                log_msg = (
+                    f"[BOT {bot_id}] {pair} {final_signal} | "
+                    f"{'WIN' if won else 'LOSS'} ${abs(pnl):.4f} | "
+                    f"Balance: ${updated_bot.get('current_balance', 0):.4f} | "
+                    f"Daily PnL: ${updated_bot.get('daily_pnl', 0):.4f} | "
+                    f"Conf: {combined_conf*100:.0f}%"
+                )
+                for conn in list(active_connections):
+                    try:
+                        await conn.send_json({"log": log_msg, "swarm_update": True})
+                    except Exception:
+                        pass
+
+                # Check target hit -> spawn 9 new bots
+                if bm.check_target_hit(bot_id):
+                    children = bm.spawn_children(bot_id)
+                    spawn_msg = (f"SWARM SPAWN EVENT! BOT {bot_id} HIT $100 TARGET! "
+                                 f"Spawning {len(children)} new bots! "
+                                 f"Generation {bm.swarm_stats['swarm_generation']} ONLINE!")
+                    print(f"[SwarmEngine] {spawn_msg}")
+                    for conn in list(active_connections):
+                        try:
+                            await conn.send_json({"log": spawn_msg, "spawn_event": True, "children_spawned": len(children)})
+                        except Exception:
+                            pass
+
+            # Broadcast full swarm status every 5 ticks
+            if loop_tick % 5 == 0:
+                summary = bm.get_swarm_summary()
+                for conn in list(active_connections):
+                    try:
+                        await conn.send_json({"swarm_status": summary})
+                    except Exception:
+                        pass
+
+            # Midnight UTC auto-reset (revive dead swarm)
+            now_utc = datetime.utcnow()
+            if now_utc.hour == 0 and now_utc.minute == 0 and 0 <= now_utc.second < 4:
+                if not bm.get_active_bots():
+                    print("[SwarmEngine] Midnight auto-reset: creating fresh primary bot.")
+                    bm.create_primary_bot()
+
+            await asyncio.sleep(bot_speed_seconds)
+
+        except Exception as e:
+            print(f"[SwarmEngine Error] {e}")
+            await asyncio.sleep(2)

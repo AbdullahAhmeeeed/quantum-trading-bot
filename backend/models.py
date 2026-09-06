@@ -35,15 +35,15 @@ class Trade(Base):
     __tablename__ = "trades"
 
     id = Column(Integer, primary_key=True, index=True)
-    portfolio_id = Column(Integer, ForeignKey("portfolios.id"))
+    portfolio_id = Column(Integer, ForeignKey("portfolios.id"), nullable=True)
     symbol = Column(String, nullable=False)
-    side = Column(String, nullable=False) # "BUY" or "SELL"
+    side = Column(String, nullable=False)  # "BUY" or "SELL"
     amount = Column(Float, nullable=False)
     entry_price = Column(Float, nullable=False)
     exit_price = Column(Float, nullable=True)
     stop_loss = Column(Float, nullable=True)
     take_profit = Column(Float, nullable=True)
-    status = Column(String, default="OPEN") # "OPEN", "CLOSED", "STOPPED_OUT"
+    status = Column(String, default="OPEN")  # "OPEN", "CLOSED", "STOPPED_OUT"
     pnl = Column(Float, default=0.0)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     closed_at = Column(DateTime(timezone=True), nullable=True)

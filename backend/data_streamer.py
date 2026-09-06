@@ -14,16 +14,28 @@ class DataStreamer:
 
     def _to_yf_symbol(self, symbol: str) -> str:
         mappings = {
-            "BTC/USDT":  "BTC-USD",
-            "ETH/USDT":  "ETH-USD",
-            "BNB/USDT":  "BNB-USD",
-            "PAXG/USDT": "GC=F",      # PAXG tracks gold; GC=F is Gold Futures
-            "BTC/USD":   "BTC-USD",
-            "ETH/USD":   "ETH-USD",
+            "BTC/USDT":   "BTC-USD",
+            "ETH/USDT":   "ETH-USD",
+            "BNB/USDT":   "BNB-USD",
+            "SOL/USDT":   "SOL-USD",
+            "PAXG/USDT":  "GC=F",      # PAXG tracks gold; GC=F is Gold Futures
+            "DOGE/USDT":  "DOGE-USD",
+            "SHIB/USDT":  "SHIB-USD",
+            "PEPE/USDT":  "PEPE-USD",
+            "WIF/USDT":   "WIF-USD",
+            "BONK/USDT":  "BONK-USD",
+            "XRP/USDT":   "XRP-USD",
+            "ADA/USDT":   "ADA-USD",
+            "AVAX/USDT":  "AVAX-USD",
+            "MATIC/USDT": "MATIC-USD",
+            "UNI/USDT":   "UNI-USD",
+            "BTC/USD":    "BTC-USD",
+            "ETH/USD":    "ETH-USD",
         }
         if symbol in mappings:
             return mappings[symbol]
         return symbol.replace("/USDT", "-USD").replace("/USD", "-USD")
+
 
     def _is_forex(self):
         return "=" in self.symbol or ("USD" in self.symbol and "USDT" not in self.symbol and "/" not in self.symbol)
@@ -139,7 +151,16 @@ class DataStreamer:
 
         # 1. Direct Global Coinbase Spot Check (Ultra-reliable worldwide)
         try:
-            coin = 'BTC-USD' if 'BTC' in self.symbol else 'PAXG-USD' if 'PAXG' in self.symbol else 'ETH-USD'
+            coinbase_map = {
+                "BTC/USDT": "BTC-USD", "ETH/USDT": "ETH-USD",
+                "BNB/USDT": "BNB-USD", "SOL/USDT": "SOL-USD",
+                "DOGE/USDT": "DOGE-USD", "SHIB/USDT": "SHIB-USD",
+                "PEPE/USDT": "PEPE-USD", "XRP/USDT": "XRP-USD",
+                "ADA/USDT": "ADA-USD", "AVAX/USDT": "AVAX-USD",
+                "MATIC/USDT": "MATIC-USD", "PAXG/USDT": "PAXG-USD",
+                "WIF/USDT": "WIF-USD", "BONK/USDT": "BONK-USD",
+            }
+            coin = coinbase_map.get(self.symbol, self.symbol.replace("/USDT", "-USD"))
             url = f'https://api.coinbase.com/v2/prices/{coin}/spot'
             req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 QuantBot/2.4'})
             with urllib.request.urlopen(req, timeout=1.8) as res:
