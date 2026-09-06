@@ -1,4 +1,4 @@
-﻿"""
+"""
 bot_manager.py - Quantum AI Swarm Autonomous Survival Engine
 Each bot starts with $10.
 Survival Instinct:
@@ -246,6 +246,7 @@ def get_all_bots() -> List[dict]:
 
 
 def get_swarm_summary() -> dict:
+    ensure_primary_bot()
     check_daily_deadlines()
     with swarm_lock:
         now_epoch = int(time.time())

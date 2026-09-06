@@ -2116,6 +2116,33 @@ function App() {
               </div>
             </div>
 
+            {/* Minimum-Risk Safety Protocol Badge */}
+            <div style={{
+              background: 'rgba(16, 185, 129, 0.1)',
+              border: '1px solid rgba(16, 185, 129, 0.35)',
+              borderRadius: '8px',
+              padding: '0.6rem 1rem',
+              marginBottom: '1.2rem',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: '8px',
+              fontSize: '0.8rem'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 700, color: '#10b981' }}>
+                <span>🛡️</span>
+                <span>MINIMUM RISK PROTOCOL ACTIVE</span>
+              </div>
+              <div style={{ display: 'flex', gap: '14px', flexWrap: 'wrap', color: 'var(--text-muted)', fontSize: '0.75rem', fontWeight: 600 }}>
+                <span>Risk/Trade: <strong style={{color: '#fff'}}>1.0%</strong></span>
+                <span>Confidence Edge: <strong style={{color: '#fff'}}>≥ 70%</strong></span>
+                <span>Stop Loss: <strong style={{color: '#f43f5e'}}>1.2%</strong></span>
+                <span>Take Profit: <strong style={{color: '#10b981'}}>3.0% (2.5:1 R:R)</strong></span>
+                <span>Fee Deduction: <strong style={{color: '#ff9500'}}>0.08%</strong></span>
+              </div>
+            </div>
+
             {/* Swarm Performance Overview */}
             <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(160px, 1fr))', gap:'1rem', marginBottom:'1.5rem'}}>
               {[

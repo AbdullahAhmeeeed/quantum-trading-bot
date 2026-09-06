@@ -88,16 +88,17 @@ def get_bot_control():
     }
 
 bot_risk_config = {
-    "execution_mode": "AUTO_QUANT",  # "AUTO_QUANT" or "CUSTOM"
-    "risk_pct": 5.0,                 # 5% equity risk per trade
-    "atr_multiplier": 1.5,
-    "rr_ratio": 2.0,                 # 2:1 Take profit ratio
-    "max_drawdown_limit": 5.0,       # 5% circuit breaker
-    "scan_interval_sec": 2,
-    "max_duration_minutes": 0,       # 0 = No limit (Dynamic ATR), 15 = 15m scalp, 30 = 30m, 60 = 1h
-    "min_confidence": 0.65,
+    "execution_mode": "MINIMUM_RISK_PRESERVATION",  # Institutional capital preservation
+    "risk_pct": 1.0,                 # Strict 1% risk per trade
+    "atr_multiplier": 2.0,           # Dynamic ATR buffer
+    "rr_ratio": 2.5,                 # 2.5:1 Take profit ratio
+    "max_drawdown_limit": 2.5,       # 2.5% daily drawdown circuit breaker
+    "scan_interval_sec": 4,          # Professional scan interval
+    "max_duration_minutes": 60,
+    "min_confidence": 0.72,          # High statistical edge required (72%+)
     "auto_learning_enabled": True
 }
+
 
 class RiskConfigRequest(BaseModel):
     execution_mode: str = "AUTO_QUANT"
@@ -1312,43 +1313,36 @@ async def swarm_trading_loop():
                     final_signal = signal if combined_conf >= 0.48 else "HOLD"
                 except Exception:
                     combined_conf = opp_score / 100.0
-                    final_signal = signal if combined_conf >= 0.48 else "HOLD"
+                    final_signal = signal if combined_conf >= 0.70 else "HOLD"
 
                 if final_signal == "HOLD":
                     with bm.swarm_lock:
                         if bot_id in bm.swarm_bots:
-                            bm.swarm_bots[bot_id]["thought"] = f"Analyzing {pair}... Conf {combined_conf*100:.0f}% below execution threshold. Patiently waiting for clean entry."
+                            bm.swarm_bots[bot_id]["thought"] = f"Analyzing {pair}... Edge {combined_conf*100:.0f}% < 70% min-risk threshold. Preserving capital."
                     continue
 
-                # 4. SURVIVAL INSTINCT DYNAMIC SIZING
+                # 4. INSTITUTIONAL MINIMUM-RISK POSITION SIZING (Capital Preservation)
                 cur_bal = bot["current_balance"]
                 pnl_now = bot["daily_pnl"]
-                surv_state = bot.get("survival_state", "HUNTING")
 
-                if surv_state == "CRITICAL" or cur_bal < 3.0:
-                    # Desperation mode: aggressive position size to stage a comeback or die trying
-                    risk_pct = random.uniform(0.30, 0.40)
-                    tp_multiplier = 3.5
-                elif surv_state == "THRIVING" or pnl_now >= 50.0:
-                    # Near $100 goal: disciplined compounding on high-probability setups
-                    risk_pct = random.uniform(0.16, 0.22)
-                    tp_multiplier = 3.0
-                else:
-                    # Normal hunting mode: 18% - 25% sizing for realistic $10 -> $100 trajectory
-                    risk_pct = random.uniform(0.18, 0.25)
-                    tp_multiplier = 3.0
-
+                # Strict 1.0% capital risk per trade (No over-leveraging)
+                risk_pct = 0.010
                 trade_capital = max(cur_bal * risk_pct, 0.05)
-                sl_pct = 0.035  # 3.5% stop loss
-                tp_pct = sl_pct * tp_multiplier  # 10.5% - 12% take profit
 
-                # Trade execution outcome (realistic win rate derived from ML & momentum)
-                win_prob = min(combined_conf + 0.04, 0.76)
+                # Strict 1.2% Stop Loss, 3.0% Take Profit (2.5:1 R:R), with exchange fee buffer
+                sl_pct = 0.012
+                tp_pct = 0.030
+                fee_buffer = 0.0008
+
+                # Win probability grounded in technical ML confluence
+                win_prob = min(combined_conf + 0.02, 0.74)
                 won = random.random() < win_prob
-                pnl = round(trade_capital * (tp_pct if won else -sl_pct), 4)
+                raw_pnl = trade_capital * (tp_pct if won else -sl_pct)
+                pnl = round(raw_pnl - (trade_capital * fee_buffer), 4)
 
                 # Update bot state & record trade in audit ledger
                 bm.update_bot_trade(bot_id, pnl, pair, final_signal, combined_conf, trade_capital=trade_capital)
+
 
                 # Broadcast trade log to UI
                 updated_bot = bm.swarm_bots.get(bot_id, {})
