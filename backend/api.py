@@ -53,12 +53,35 @@ def get_model_stats():
 
 from news_engine import NewsEngine
 from binance_testnet import BinanceTestnet
+from binance_live import BinanceExchangeConnector
+
 news_engine = NewsEngine()
 
-# Testnet credentials — will be set via /api/auth/settings
-TESTNET_API_KEY    = "h6XpFOWFRsWY2liKkSdaJSYwwsGvHOjSp0U0c9Msek6Hpawl7KxJE7lgcNwnaKva"
-TESTNET_API_SECRET = "TUwUARgxEgyhAols3b5ypAvh5lEWqXZnAgKVNJAlGhAYbWJ2fisF4sGPVjFTFOxG"
+# Unified Binance Exchange State (Supports both Testnet and Live Real Money)
+EXCHANGE_CONFIG = {
+    "api_key": "h6XpFOWFRsWY2liKkSdaJSYwwsGvHOjSp0U0c9Msek6Hpawl7KxJE7lgcNwnaKva",
+    "api_secret": "TUwUARgxEgyhAols3b5ypAvh5lEWqXZnAgKVNJAlGhAYbWJ2fisF4sGPVjFTFOxG",
+    "environment": "TESTNET",  # "TESTNET" or "LIVE"
+    "exchange_type": "BINANCE_GLOBAL", # "BINANCE_GLOBAL" or "BINANCE_US"
+    "max_trade_cap_usd": 10.0,
+}
+
+TESTNET_API_KEY    = EXCHANGE_CONFIG["api_key"]
+TESTNET_API_SECRET = EXCHANGE_CONFIG["api_secret"]
+exchange_connector: BinanceExchangeConnector = None
 testnet: BinanceTestnet = None
+
+try:
+    exchange_connector = BinanceExchangeConnector(
+        api_key=EXCHANGE_CONFIG["api_key"],
+        api_secret=EXCHANGE_CONFIG["api_secret"],
+        is_live=False,
+        is_us=False,
+        max_trade_cap_usd=10.0
+    )
+    testnet = exchange_connector
+except Exception as e:
+    print(f"[Exchange Init Notice] {e}")
 
 # BOT 1: Institutional Portfolio Trading Bot (Exclusively trades Bitcoin & Gold)
 TRADING_PAIRS = ["BTC/USDT", "PAXG/USDT"]
@@ -76,17 +99,19 @@ bot_speed_seconds = 2  # Options: 1, 5, 10, 60
 
 @app.get("/api/bot/control")
 def get_bot_control():
-    global bot_active, bot_speed_seconds, testnet
-    testnet_info = {"connected": False}
-    if testnet:
-        testnet_info = testnet.test_connection()
-        if testnet_info.get("connected"):
-            testnet_info["balances"] = testnet.get_account_balance()
+    global bot_active, bot_speed_seconds, exchange_connector, testnet
+    active_engine = exchange_connector or testnet
+    conn_info = {"connected": False, "mode": EXCHANGE_CONFIG.get("environment", "TESTNET")}
+    if active_engine:
+        conn_info = active_engine.test_connection()
+        if conn_info.get("connected"):
+            conn_info["balances"] = active_engine.get_account_balance()
     return {
         "bot_active": bot_active,
         "bot_speed_seconds": bot_speed_seconds,
         "pairs": TRADING_PAIRS,
-        "testnet": testnet_info
+        "testnet": conn_info,
+        "exchange_config": EXCHANGE_CONFIG,
     }
 
 bot_risk_config = {
@@ -467,13 +492,15 @@ async def autonomous_trading_loop():
                                 sl_price = current_price - stop_dist if signal == "BUY" else current_price + stop_dist
                                 tp_price = current_price + (stop_dist * rr_ratio) if signal == "BUY" else current_price - (stop_dist * rr_ratio)
 
-                                # Dispatch real Binance Testnet Order if connected
+                                # Dispatch real Binance Order if connected
                                 order_info = ""
-                                if testnet and TESTNET_API_SECRET:
-                                    result = testnet.place_market_order(pair, signal.lower(), usdt_amt)
+                                active_engine = exchange_connector or testnet
+                                if active_engine and getattr(active_engine, 'api_secret', None):
+                                    result = active_engine.place_market_order(pair, signal.lower(), usdt_amt)
                                     if result.get('success'):
-                                        order_info = f" [BINANCE TESTNET #{result['order_id']}]"
-                                        testnet.place_stop_loss_order(pair, signal, qty, sl_price)
+                                        mode_lbl = result.get('mode', 'BINANCE')
+                                        order_info = f" [{mode_lbl} #{result['order_id']}]"
+                                        active_engine.place_stop_loss_order(pair, signal, qty, sl_price)
 
                                 trade_record = execution.execute_market_order(
                                     db,
@@ -995,44 +1022,112 @@ def get_portfolio(db: Session = Depends(get_db)):
 class APISettingsRequest(BaseModel):
     api_key: str
     api_secret: str
+    environment: str = "TESTNET" # "TESTNET" or "LIVE"
+    exchange_type: str = "BINANCE_GLOBAL" # "BINANCE_GLOBAL" or "BINANCE_US"
+    max_trade_cap_usd: float = 10.0
 
 @app.post("/api/auth/settings")
 def update_api_settings(req: APISettingsRequest, db: Session = Depends(get_db)):
-    global testnet, TESTNET_API_SECRET
-    TESTNET_API_SECRET = req.api_secret
+    global exchange_connector, testnet, TESTNET_API_KEY, TESTNET_API_SECRET, EXCHANGE_CONFIG
+    
+    env_clean = req.environment.strip().upper()
+    is_live = (env_clean == "LIVE")
+    is_us = (req.exchange_type.strip().upper() == "BINANCE_US")
+    cap = max(1.0, float(req.max_trade_cap_usd or 10.0))
+    
+    EXCHANGE_CONFIG["api_key"] = req.api_key.strip()
+    EXCHANGE_CONFIG["api_secret"] = req.api_secret.strip()
+    EXCHANGE_CONFIG["environment"] = "LIVE" if is_live else "TESTNET"
+    EXCHANGE_CONFIG["exchange_type"] = "BINANCE_US" if is_us else "BINANCE_GLOBAL"
+    EXCHANGE_CONFIG["max_trade_cap_usd"] = cap
+    
+    TESTNET_API_KEY = req.api_key.strip()
+    TESTNET_API_SECRET = req.api_secret.strip()
+    
     try:
-        testnet = BinanceTestnet(req.api_key, req.api_secret)
-        result  = testnet.test_connection()
+        exchange_connector = BinanceExchangeConnector(
+            api_key=req.api_key.strip(),
+            api_secret=req.api_secret.strip(),
+            is_live=is_live,
+            is_us=is_us,
+            max_trade_cap_usd=cap
+        )
+        testnet = exchange_connector
+        result = exchange_connector.test_connection()
+        
         if result.get('connected'):
+            mode_label = "🔴 LIVE REAL MONEY" if is_live else "🧪 DEMO TESTNET"
             return {
-                "message": "API keys saved. Binance Testnet connected!",
-                "testnet_balance_usdt": result.get('usdt_balance', 0),
-                "testnet_balance_btc":  result.get('btc_balance', 0),
-                "exchange": "Binance Testnet"
+                "success": True,
+                "connected": True,
+                "message": f"Connected to {result.get('exchange')} ({mode_label})! Balance: ${result.get('usdt_balance', 0.0):.2f} USDT",
+                "mode": result.get("mode"),
+                "exchange": result.get("exchange"),
+                "usdt_balance": result.get("usdt_balance", 0.0),
+                "btc_balance": result.get("btc_balance", 0.0),
+                "max_trade_cap_usd": cap,
             }
         else:
-            return {"message": f"Keys saved. Testnet connection: {result.get('error')}"}
+            return {
+                "success": False,
+                "connected": False,
+                "message": f"Connection check: {result.get('error')}",
+                "error": result.get("error")
+            }
     except Exception as e:
-        return {"message": f"Keys saved. Testnet error: {e}"}
+        return {"success": False, "connected": False, "message": f"Connection exception: {e}", "error": str(e)}
+
+@app.get("/api/wallet/live_balance")
+def get_live_wallet_balance():
+    """Returns real-time Binance Spot Wallet balances (USDT, BTC, etc.)."""
+    global exchange_connector, testnet, EXCHANGE_CONFIG
+    active_engine = exchange_connector or testnet
+    if not active_engine or not getattr(active_engine, 'api_key', None):
+        return {
+            "connected": False,
+            "mode": EXCHANGE_CONFIG.get("environment", "TESTNET"),
+            "exchange": "None",
+            "usdt_balance": 0.0,
+            "btc_balance": 0.0,
+            "assets": {},
+            "message": "No exchange API keys configured."
+        }
+    status = active_engine.test_connection()
+    balances = active_engine.get_account_balance() if status.get("connected") else {}
+    return {
+        "connected": status.get("connected", False),
+        "mode": status.get("mode", EXCHANGE_CONFIG.get("environment", "TESTNET")),
+        "exchange": status.get("exchange", "Binance"),
+        "usdt_balance": status.get("usdt_balance", 0.0),
+        "btc_balance": status.get("btc_balance", 0.0),
+        "max_trade_cap_usd": getattr(active_engine, "max_trade_cap_usd", 10.0),
+        "assets": balances,
+        "error": status.get("error")
+    }
 
 @app.get("/api/testnet/status")
 def get_testnet_status():
-    """Returns Binance Testnet connection status and current demo balance."""
-    global testnet
-    if not testnet or not TESTNET_API_SECRET:
+    """Returns Binance connection status and current wallet balances."""
+    global exchange_connector, testnet
+    active_engine = exchange_connector or testnet
+    if not active_engine or not getattr(active_engine, 'api_secret', None):
         return {
             "connected": False,
-            "message": "Testnet not connected. Enter your Binance Testnet Secret Key in API Settings.",
-            "setup_url": "https://testnet.binance.vision"
+            "message": "Exchange not connected. Enter your Binance API Key & Secret in Settings.",
+            "setup_url": "https://binance.com"
         }
-    result = testnet.test_connection()
+    result = active_engine.test_connection()
     if result.get('connected'):
-        balance = testnet.get_account_balance()
+        balance = active_engine.get_account_balance()
         return {
             "connected": True,
-            "exchange": "Binance Testnet",
+            "exchange": result.get("exchange", "Binance"),
+            "mode": result.get("mode", "TESTNET"),
             "balances": balance,
-            "open_orders": testnet.get_open_orders()
+            "usdt_balance": result.get("usdt_balance", 0.0),
+            "btc_balance": result.get("btc_balance", 0.0),
+            "max_trade_cap_usd": getattr(active_engine, "max_trade_cap_usd", 10.0),
+            "open_orders": active_engine.get_open_orders()
         }
     return {"connected": False, "error": result.get('error')}
 
