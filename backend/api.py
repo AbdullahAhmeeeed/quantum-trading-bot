@@ -511,30 +511,42 @@ async def autonomous_trading_loop():
 @app.on_event("startup")
 async def startup_event():
     global testnet
-    print("[Startup] Initializing Binance Testnet Connection...")
-    if TESTNET_API_KEY and TESTNET_API_SECRET:
-        try:
-            testnet = BinanceTestnet(TESTNET_API_KEY, TESTNET_API_SECRET)
-            res = testnet.test_connection()
-            print(f"[Startup] Binance Testnet Connected: {res}")
-        except Exception as e:
-            print(f"[Startup] Binance Testnet Init Error: {e}")
-
-    print("[Startup] Loading lifetime historical data for training...")
-    btc_streamer = DataStreamer(symbol="BTC/USDT", timeframe="1d")
-    btc_df = btc_streamer.fetch_historical_data(limit=99999)
-    print(f"[Startup] Fetched {len(btc_df)} daily BTC candles for training")
-    strategy.train_model(btc_df)
-
-    # Initialize primary swarm bot ($10 starting capital)
-    print("[Startup] Initializing Swarm — Primary Bot $10 Capital...")
+    print("[Startup] Initializing Quantum AI Trading OS...")
+    
+    # 1. Initialize primary swarm bot ($10 starting capital)
     bm.create_primary_bot()
-    print(f"[Startup] Swarm initialized. Bots: {bm.get_swarm_summary()['active_count']} active")
+    print(f"[Startup] Swarm initialized immediately. Active bots: {bm.get_swarm_summary()['active_count']}")
 
-    # Start autonomous trading loops
+    # 2. Launch autonomous trading loops immediately
     asyncio.create_task(autonomous_trading_loop())
     asyncio.create_task(swarm_trading_loop())
-    print("[Startup] All autonomous loops ONLINE")
+    print("[Startup] Autonomous loops ONLINE")
+
+    # 3. Asynchronous background ML model training (non-blocking for instant cloud healthchecks)
+    async def _async_train():
+        await asyncio.sleep(1)
+        try:
+            if TESTNET_API_KEY and TESTNET_API_SECRET:
+                try:
+                    global testnet
+                    testnet = BinanceTestnet(TESTNET_API_KEY, TESTNET_API_SECRET)
+                    res = testnet.test_connection()
+                    print(f"[Startup] Binance Testnet Connected: {res}")
+                except Exception as e:
+                    print(f"[Startup] Binance Testnet Init: {e}")
+
+            print("[Startup] Background training: Fetching BTC historical candles...")
+            btc_streamer = DataStreamer(symbol="BTC/USDT", timeframe="1d")
+            btc_df = btc_streamer.fetch_historical_data(limit=1000)
+            if len(btc_df) >= 30:
+                strategy.train_model(btc_df)
+                print(f"[Startup] ML Model walk-forward training complete ({len(btc_df)} candles)")
+        except Exception as e:
+            print(f"[Startup] Background training notice: {e}")
+
+    asyncio.create_task(_async_train())
+    print("[Startup] Quantum Engine HTTP Server READY (Healthchecks active)")
+
 
 @app.websocket("/ws/market")
 async def websocket_endpoint(websocket: WebSocket):
