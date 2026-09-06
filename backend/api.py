@@ -10,12 +10,14 @@ from database import SessionLocal
 import asyncio
 import time
 import random
+import os
+import urllib.request
 import pandas as pd
 import numpy as np
 from pydantic import BaseModel
 import bot_manager as bm
 from opportunity_scanner import scan_opportunities, get_cached_opportunities, get_best_opportunity, DEFAULT_PRICES, TRADING_UNIVERSE
-from datetime import datetime
+from datetime import datetime, timezone
 
 # Create database tables
 models.Base.metadata.create_all(bind=engine)
@@ -509,6 +511,32 @@ async def autonomous_trading_loop():
             print(f"[Loop Master Error] {e}")
             await asyncio.sleep(1)
 
+async def keep_alive_self_ping_loop():
+    """
+    24/7 Self-ping loop: Periodically pings the public Render deployment every 8 minutes (480s)
+    to keep the container awake and prevent idle spin-down.
+    """
+    await asyncio.sleep(45)
+    render_url = os.getenv("RENDER_EXTERNAL_URL", "https://quantum-trading-bot-6de4.onrender.com").rstrip("/")
+    ping_url = f"{render_url}/api/health"
+    print(f"[KeepAlive] 24/7 Self-ping task active for target: {ping_url}")
+
+    while True:
+        try:
+            loop = asyncio.get_event_loop()
+            def _ping():
+                req = urllib.request.Request(
+                    ping_url,
+                    headers={"User-Agent": "QuantumTradingEngine/2.0 (24-7 KeepAlive)"}
+                )
+                with urllib.request.urlopen(req, timeout=20) as resp:
+                    return resp.status
+            status = await loop.run_in_executor(None, _ping)
+            print(f"[KeepAlive] 24/7 Heartbeat ping successful -> HTTP {status}")
+        except Exception as e:
+            print(f"[KeepAlive] Heartbeat ping notice: {e}")
+        await asyncio.sleep(480)
+
 @app.on_event("startup")
 async def startup_event():
     global testnet
@@ -521,7 +549,8 @@ async def startup_event():
     # 2. Launch autonomous trading loops immediately
     asyncio.create_task(autonomous_trading_loop())
     asyncio.create_task(swarm_trading_loop())
-    print("[Startup] Autonomous loops ONLINE")
+    asyncio.create_task(keep_alive_self_ping_loop())
+    print("[Startup] Autonomous loops & 24/7 Keep-Alive ONLINE")
 
     # 3. Asynchronous background ML model training (non-blocking for instant cloud healthchecks)
     async def _async_train():
@@ -559,6 +588,20 @@ async def websocket_endpoint(websocket: WebSocket):
     except WebSocketDisconnect:
         if websocket in active_connections:
             active_connections.remove(websocket)
+
+@app.get("/api/health")
+def health_check():
+    """24/7 Healthcheck endpoint used by Keep-Alive and external uptime monitors."""
+    swarm = bm.get_swarm_summary()
+    return {
+        "status": "ONLINE",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "active_bots": swarm.get("active_count", 0),
+        "total_bots": swarm.get("total_bots", 0),
+        "bot_active": bot_active,
+        "mode": bot_risk_config.get("execution_mode", "MINIMUM_RISK_PRESERVATION"),
+        "message": "Quantum 24/7 Autonomous Trading Engine is ALIVE and RUNNING."
+    }
 
 @app.get("/")
 def read_root():

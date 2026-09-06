@@ -1,0 +1,22 @@
+﻿name: 24/7 Render Keep-Alive Monitor
+
+on:
+  schedule:
+    # Run every 10 minutes, 24 hours a day, 7 days a week
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+jobs:
+  keep-alive:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Render Backend Health Endpoint
+        run: |
+          echo "Triggering 24/7 Heartbeat Ping to Quantum Trading Bot Backend..."
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 https://quantum-trading-bot-6de4.onrender.com/api/health)
+          echo "HTTP Response Status: $HTTP_STATUS"
+          if [ "$HTTP_STATUS" -eq 200 ]; then
+            echo "Backend is ONLINE and Active 24/7!"
+          else
+            echo "Backend responded with HTTP $HTTP_STATUS"
+          fi
