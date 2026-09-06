@@ -24,8 +24,8 @@ function App() {
   const [equityCurveData, setEquityCurveData] = useState(null)
   
   const [market, setMarket] = useState(null)
-  const [btcMarket, setBtcMarket] = useState({ price: 74820.0, signal: 'BUY', conf: 0.84, sentiment: 0.45 })
-  const [goldMarket, setGoldMarket] = useState({ price: 4512.5, signal: 'BUY', conf: 0.76, sentiment: 0.32 })
+  const [btcMarket, setBtcMarket] = useState({ price: 80020.0, signal: 'BUY', conf: 0.84, sentiment: 0.45 })
+  const [goldMarket, setGoldMarket] = useState({ price: 4435.0, signal: 'BUY', conf: 0.76, sentiment: 0.32 })
   const [symbols, setSymbols] = useState(['BTC/USDT', 'PAXG/USDT', 'ETH/USDT', 'SOL/USDT'])
   const [selectedSymbol, setSelectedSymbol] = useState('BTC/USDT')
   const [btcTimeframe, setBtcTimeframe] = useState('1s')
@@ -480,13 +480,32 @@ function App() {
     }
   };
 
+  const fetchLatestMarket = async () => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/market/latest`);
+      if (res.ok) {
+        const d = await res.json();
+        if (d["BTC/USDT"]) {
+          setBtcMarket(prev => ({ ...prev, price: d["BTC/USDT"].price, signal: d["BTC/USDT"].signal, conf: d["BTC/USDT"].confidence }));
+        }
+        if (d["PAXG/USDT"]) {
+          setGoldMarket(prev => ({ ...prev, price: d["PAXG/USDT"].price, signal: d["PAXG/USDT"].signal, conf: d["PAXG/USDT"].confidence }));
+        }
+      }
+    } catch (e) {
+      // quiet fallback
+    }
+  };
+
   useEffect(() => {
     fetchBotControl();
     fetchPortfolioAndHistory();
     fetchModelAndRisk();
+    fetchLatestMarket();
     const interval = setInterval(() => {
       fetchPortfolioAndHistory();
-    }, 2500);
+      fetchLatestMarket();
+    }, 2000);
     return () => clearInterval(interval);
   }, []);
 
