@@ -89,10 +89,12 @@ class BinanceExchangeConnector:
             }
         except Exception as e:
             err_msg = str(e)
-            if 'Invalid API-key' in err_msg or 'API-key format' in err_msg:
+            if '451' in err_msg or 'restricted location' in err_msg:
+                friendly = "Binance Global US Cloud Restriction (451): Render cloud servers are in the US. Please open http://localhost:5173 on your PC to connect directly using your home internet with zero IP restrictions!"
+            elif 'Invalid API-key' in err_msg or 'API-key format' in err_msg:
                 friendly = "Invalid API Key or IP address restricted on Binance."
             elif 'Signature' in err_msg:
-                friendly = "Invalid API Secret signature."
+                friendly = "Invalid API Secret signature. Ensure you copied both keys using the Binance Copy button."
             elif 'Timestamp' in err_msg:
                 friendly = "Server time out of sync with Binance. Retrying..."
             else:
