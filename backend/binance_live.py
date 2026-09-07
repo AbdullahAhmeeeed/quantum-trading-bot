@@ -1,4 +1,4 @@
-﻿"""
+"""
 binance_live.py — Production-Grade Binance Live & Testnet Exchange Connector
 Supports Binance Global (binance.com) & Binance US (binance.us).
 Features: Rate limiting, real balance fetching, safety permission verification, LOT_SIZE precision formatting.
@@ -31,6 +31,7 @@ class BinanceExchangeConnector:
             'options': {
                 'defaultType': 'spot',
                 'adjustForTimeDifference': True,
+                'fetchCurrencies': False,
             }
         }
         
@@ -38,8 +39,8 @@ class BinanceExchangeConnector:
         if not is_live:
             config['urls'] = {
                 'api': {
-                    'public':  'https://testnet.binance.vision/api',
-                    'private': 'https://testnet.binance.vision/api',
+                    'public':  'https://testnet.binance.vision/api/v3',
+                    'private': 'https://testnet.binance.vision/api/v3',
                     'v3':      'https://testnet.binance.vision/api/v3',
                 }
             }
@@ -64,7 +65,7 @@ class BinanceExchangeConnector:
                 'exchange': self.get_exchange_name()
             }
         try:
-            balance = self.exchange.fetch_balance()
+            balance = self.exchange.fetch_balance({'type': 'spot'})
             usdt = balance.get('USDT', {}).get('free', 0) or balance.get('USD', {}).get('free', 0)
             btc = balance.get('BTC', {}).get('free', 0)
             
@@ -110,7 +111,7 @@ class BinanceExchangeConnector:
     def get_account_balance(self) -> dict:
         """Return non-zero assets in Spot Wallet."""
         try:
-            balance = self.exchange.fetch_balance()
+            balance = self.exchange.fetch_balance({'type': 'spot'})
             result = {}
             for asset, data in balance.get('total', {}).items():
                 tot = float(data or 0)
