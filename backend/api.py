@@ -1323,6 +1323,22 @@ def reset_swarm():
     return {"status": "SWARM_RESET", "bot": bot, "message": "Swarm reset. New primary bot started with $10."}
 
 
+class SetSwarmCapitalRequest(BaseModel):
+    capital: float
+
+@app.post("/api/swarm/set_capital")
+def set_swarm_capital(req: SetSwarmCapitalRequest):
+    """Allocate specific capital (e.g. $4.00) exclusively to the Little Bot."""
+    bot = bm.set_primary_bot_capital(req.capital)
+    return {
+        "status": "CAPITAL_UPDATED",
+        "capital": req.capital,
+        "bot": bot,
+        "summary": bm.get_swarm_summary(),
+        "message": f"Little Bot capital allocated to ${req.capital:.2f}."
+    }
+
+
 @app.post("/api/swarm/kill/{bot_id}")
 def kill_swarm_bot(bot_id: str):
     """Manually kill a specific bot."""

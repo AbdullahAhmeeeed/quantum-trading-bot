@@ -2521,7 +2521,22 @@ function App() {
                   Bot 2 Authority: Starts with $10 → 24h Deadline to hit $100 or DIE → On $100 spawns 9 clones
                 </div>
               </div>
-              <div style={{display: 'flex', gap: '10px'}}>
+              <div style={{display: 'flex', gap: '10px', flexWrap: 'wrap'}}>
+                <button
+                  onClick={async () => {
+                    await fetch(`${API_BASE_URL}/api/swarm/set_capital`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ capital: 4.0 })
+                    });
+                    fetchSwarmData();
+                    playSound('SUCCESS');
+                  }}
+                  style={{padding:'8px 18px', background:'linear-gradient(135deg, #10b981, #059669)', border:'none',
+                    borderRadius:'8px', color:'#fff', fontWeight:800, cursor:'pointer', fontSize:'0.85rem', boxShadow:'0 0 15px rgba(16,185,129,0.3)'}}
+                >
+                  💵 Fund Little Bot ($4.00)
+                </button>
                 <button
                   onClick={async () => {
                     await fetch(`${API_BASE_URL}/api/swarm/start`, {method:'POST'});
@@ -2535,7 +2550,7 @@ function App() {
                 </button>
                 <button
                   onClick={async () => {
-                    if (window.confirm('Reset swarm? All dead bots will be cleared and Bot #1 restarted with fresh $10.')) {
+                    if (window.confirm('Reset swarm? All dead bots will be cleared and Bot #1 restarted with fresh seed.')) {
                       await fetch(`${API_BASE_URL}/api/swarm/reset`, {method:'POST'});
                       fetchSwarmData();
                       playSound('ALERT');
@@ -2544,7 +2559,7 @@ function App() {
                   style={{padding:'8px 18px', background:'rgba(244,63,94,0.2)', border:'1px solid rgba(244,63,94,0.4)',
                     borderRadius:'8px', color:'#f43f5e', fontWeight:800, cursor:'pointer', fontSize:'0.85rem'}}
                 >
-                  🔄 Daily Reset ($10 Seed)
+                  🔄 Daily Reset
                 </button>
               </div>
             </div>

@@ -291,3 +291,24 @@ def ensure_primary_bot():
         else:
             return active[0]
     return create_primary_bot()
+
+
+def set_primary_bot_capital(amount: float) -> dict:
+    """Set custom starting capital allocated to the primary swarm bot (e.g. $4.00)."""
+    with swarm_lock:
+        global STARTING_CAPITAL
+        cap = max(1.0, float(amount))
+        STARTING_CAPITAL = cap
+        active = [b for b in swarm_bots.values() if b["status"] == STATUS_ACTIVE]
+        if active:
+            bot = active[0]
+            bot["starting_capital"] = cap
+            bot["current_balance"] = cap
+            bot["daily_pnl"] = 0.0
+            bot["winning_trades"] = 0
+            bot["losing_trades"] = 0
+            bot["thought"] = f"💰 Capital allocated: ${cap:.2f}. Minimum-risk survival mission initialized on Little Bot."
+            return bot
+        else:
+            return create_primary_bot()
+
