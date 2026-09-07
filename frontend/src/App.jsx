@@ -81,12 +81,12 @@ function App() {
   // Bot Autonomous & Risk Configuration State
   const [botActive, setBotActive] = useState(true)
   const [testnetStatus, setTestnetStatus] = useState(null)
-  const [apiKeyInput, setApiKeyInput] = useState('h6XpFOWFRsWY2liKkSdaJSYwwsGvHOjSp0U0c9Msek6Hpawl7KxJE7lgcNwnaKva')
-  const [apiSecretInput, setApiSecretInput] = useState('TUwUARgxEgyhAols3b5ypAvh5lEWqXZnAgKVNJAlGhAYbWJ2fisF4sGPVjFTFOxG')
+  const [apiKeyInput, setApiKeyInput] = useState('TKPOw5KRJoitWUyAeyRCasZfCRUMxMGj8G9slwLJdBh7J82iVdbn9lwt0Eq5LDHH')
+  const [apiSecretInput, setApiSecretInput] = useState('VRRqxabECnCIesby2Zw1F7suRLZcSQOSYPVBpJwVkd6RTuz2lSAZr9Gs2g2cA8M0')
   const [apiSaveMsg, setApiSaveMsg] = useState('')
-  const [exchangeEnv, setExchangeEnv] = useState('TESTNET') // 'TESTNET' or 'LIVE'
-  const [exchangeType, setExchangeType] = useState('BINANCE_GLOBAL') // 'BINANCE_GLOBAL' or 'BINANCE_US'
-  const [maxTradeCapUsd, setMaxTradeCapUsd] = useState(10.0)
+  const [exchangeEnv, setExchangeEnv] = useState('LIVE') // Default to LIVE mode
+  const [exchangeType, setExchangeType] = useState('BINANCE_GLOBAL')
+  const [maxTradeCapUsd, setMaxTradeCapUsd] = useState(4.0)
   const [liveWalletData, setLiveWalletData] = useState(null)
 
   // Manual Override Controller State
