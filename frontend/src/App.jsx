@@ -10,7 +10,7 @@ const getApiBaseUrl = () => {
       return 'http://127.0.0.1:8000';
     }
   }
-  return import.meta.env.VITE_API_URL || 'https://quantum-trading-bot-6de4.onrender.com';
+  return import.meta.env.VITE_API_URL || 'https://quantum-backend-eu.onrender.com';
 };
 const API_BASE_URL = getApiBaseUrl();
 const WS_BASE_URL = API_BASE_URL.replace(/^http/, 'ws');
