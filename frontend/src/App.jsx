@@ -1520,19 +1520,20 @@ function App() {
               </div>
 
               {/* Mode Switcher */}
-              <div style={{display: 'flex', gap: '8px', background: 'rgba(255,255,255,0.05)', padding: '4px', borderRadius: '12px', border: '1px solid var(--border-subtle)'}}>
+              <div style={{display: 'flex', gap: '8px', background: 'rgba(255,255,255,0.05)', padding: '6px', borderRadius: '12px', border: '1px solid var(--border-subtle)'}}>
                 <button
                   type="button"
                   onClick={() => setExchangeEnv('TESTNET')}
                   style={{
-                    padding: '8px 18px',
+                    padding: '10px 20px',
                     borderRadius: '8px',
                     border: 'none',
                     cursor: 'pointer',
-                    fontSize: '0.85rem',
+                    fontSize: '0.9rem',
                     fontWeight: 800,
                     background: exchangeEnv === 'TESTNET' ? 'var(--accent-cyan)' : 'transparent',
-                    color: exchangeEnv === 'TESTNET' ? '#000' : 'var(--text-muted)'
+                    color: exchangeEnv === 'TESTNET' ? '#000' : 'var(--text-muted)',
+                    transition: 'all 0.2s ease'
                   }}
                 >
                   🧪 Demo Testnet ($0 Risk)
@@ -1540,25 +1541,90 @@ function App() {
                 <button
                   type="button"
                   onClick={() => {
-                    if (window.confirm("⚠️ SWITCH TO LIVE REAL MONEY:\nAre you sure you want to switch to LIVE Real Money Spot mode? Live orders will use real funds on Binance. (Withdrawals remain strictly blocked).")) {
-                      setExchangeEnv('LIVE');
+                    setExchangeEnv('LIVE');
+                    if (apiKeyInput.startsWith('h6Xp')) {
+                      setApiKeyInput('');
+                      setApiSecretInput('');
                     }
                   }}
                   style={{
-                    padding: '8px 18px',
+                    padding: '10px 20px',
                     borderRadius: '8px',
                     border: 'none',
                     cursor: 'pointer',
-                    fontSize: '0.85rem',
+                    fontSize: '0.9rem',
                     fontWeight: 800,
-                    background: exchangeEnv === 'LIVE' ? '#f43f5e' : 'transparent',
-                    color: exchangeEnv === 'LIVE' ? '#fff' : 'var(--text-muted)'
+                    background: exchangeEnv === 'LIVE' ? '#f43f5e' : 'rgba(244, 63, 94, 0.15)',
+                    color: exchangeEnv === 'LIVE' ? '#fff' : '#f43f5e',
+                    boxShadow: exchangeEnv === 'LIVE' ? '0 0 15px rgba(244, 63, 94, 0.4)' : 'none',
+                    transition: 'all 0.2s ease'
                   }}
                 >
                   🔴 Live Real Money (Binance)
                 </button>
               </div>
             </div>
+
+            {/* In-Place Helper Guide Banner */}
+            {exchangeEnv === 'TESTNET' ? (
+              <div style={{
+                background: 'rgba(245, 158, 11, 0.12)',
+                border: '1px solid rgba(245, 158, 11, 0.4)',
+                borderRadius: '12px',
+                padding: '1rem 1.4rem',
+                fontSize: '0.88rem',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '1rem'
+              }}>
+                <div>
+                  <div style={{fontWeight: 800, color: '#fbbf24', marginBottom: '3px'}}>
+                    💡 Currently viewing Demo Testnet ($0.00 Balance):
+                  </div>
+                  <div style={{color: 'var(--text-muted)'}}>
+                    Aapka real balance yahan tab dikhayega jab aap upar <strong>"🔴 Live Real Money (Binance)"</strong> par click karenge aur apni API Key connect karenge.
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setExchangeEnv('LIVE');
+                    if (apiKeyInput.startsWith('h6Xp')) {
+                      setApiKeyInput('');
+                      setApiSecretInput('');
+                    }
+                  }}
+                  style={{
+                    background: '#f43f5e',
+                    color: '#fff',
+                    border: 'none',
+                    padding: '9px 18px',
+                    borderRadius: '8px',
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap'
+                  }}
+                >
+                  🔴 Switch to Live Mode
+                </button>
+              </div>
+            ) : (
+              <div style={{
+                background: 'rgba(16, 185, 129, 0.12)',
+                border: '1px solid rgba(16, 185, 129, 0.4)',
+                borderRadius: '12px',
+                padding: '1rem 1.4rem',
+                fontSize: '0.88rem'
+              }}>
+                <div style={{fontWeight: 800, color: '#10b981', marginBottom: '3px'}}>
+                  🔴 LIVE SPOT MODE ACTIVE — Little Bot ($4 Allocation):
+                </div>
+                <div style={{color: 'var(--text-muted)'}}>
+                  Apni Binance API Key & Secret neeche paste karein. Bot 1 aapke funds ko touch nahi karega; sirf Little Bot (1% safe risk) ke sath aapke 4 USDT par trade karega.
+                </div>
+              </div>
+            )}
 
             {/* Zero Withdrawal Safety Mandate Banner */}
             <div style={{
