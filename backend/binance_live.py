@@ -5,6 +5,7 @@ Features: Rate limiting, real balance fetching, safety permission verification, 
 """
 import ccxt
 import time
+import re
 from typing import Dict, Any, Optional
 
 class BinanceExchangeConnector:
