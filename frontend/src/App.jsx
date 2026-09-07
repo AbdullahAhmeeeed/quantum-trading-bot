@@ -2,7 +2,17 @@ import { useState, useEffect, useRef } from 'react'
 import './index.css'
 import { ChartWidget } from './components/ChartWidget'
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') ? 'http://127.0.0.1:8000' : 'https://quantum-trading-bot-6de4.onrender.com');
+const getApiBaseUrl = () => {
+  if (typeof window !== 'undefined') {
+    const custom = localStorage.getItem('CUSTOM_BACKEND_URL');
+    if (custom && custom.trim()) return custom.trim().replace(/\/$/, '');
+    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+      return 'http://127.0.0.1:8000';
+    }
+  }
+  return import.meta.env.VITE_API_URL || 'https://quantum-trading-bot-6de4.onrender.com';
+};
+const API_BASE_URL = getApiBaseUrl();
 const WS_BASE_URL = API_BASE_URL.replace(/^http/, 'ws');
 
 function App() {
