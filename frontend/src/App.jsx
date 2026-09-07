@@ -802,6 +802,33 @@ function App() {
             ⚡ Dual Live Terminal
           </div>
           <div 
+            className={`nav-item ${activeTab === 'WALLET_API' ? 'active' : ''}`}
+            onClick={() => { setActiveTab('WALLET_API'); fetchLiveWallet(); }}
+            style={{
+              background: activeTab === 'WALLET_API' 
+                ? (exchangeEnv === 'LIVE' ? 'linear-gradient(135deg, rgba(244,63,94,0.3), rgba(255,100,0,0.15))' : 'linear-gradient(135deg, rgba(0,240,255,0.25), rgba(16,185,129,0.15))')
+                : '',
+              borderColor: activeTab === 'WALLET_API' ? (exchangeEnv === 'LIVE' ? '#f43f5e' : 'var(--accent-cyan)') : '',
+              color: activeTab === 'WALLET_API' ? (exchangeEnv === 'LIVE' ? '#f43f5e' : 'var(--accent-cyan)') : '',
+              fontWeight: 800
+            }}
+          >
+            🔑 Binance & Real Wallet
+            {liveWalletData?.usdt_balance !== undefined && liveWalletData.connected && (
+              <span style={{
+                marginLeft: '6px', 
+                background: exchangeEnv === 'LIVE' ? '#f43f5e' : '#10b981', 
+                color: '#fff',
+                borderRadius: '8px', 
+                padding: '1px 6px', 
+                fontSize: '0.68rem', 
+                fontWeight: 800
+              }}>
+                ${liveWalletData.usdt_balance.toFixed(0)}
+              </span>
+            )}
+          </div>
+          <div 
             className={`nav-item ${activeTab === 'TRADE_JOURNAL' ? 'active' : ''}`}
             onClick={() => setActiveTab('TRADE_JOURNAL')}
           >
@@ -1476,6 +1503,230 @@ function App() {
               </div>
             </div>
 
+          </div>
+        )}
+
+        {/* ── TAB: DEDICATED BINANCE REAL WALLET & API KEY CENTER ───────── */}
+        {activeTab === 'WALLET_API' && (
+          <div style={{animation: 'fadeIn 0.4s', display: 'flex', flexDirection: 'column', gap: '1.5rem'}}>
+            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem'}}>
+              <div>
+                <h2 style={{margin: 0, fontSize: '1.6rem', fontWeight: 800, color: exchangeEnv === 'LIVE' ? '#f43f5e' : 'var(--accent-cyan)'}}>
+                  🔑 {exchangeEnv === 'LIVE' ? 'Binance Live Real-Money Spot Wallet' : 'Binance Testnet & Wallet Management'}
+                </h2>
+                <div style={{color: 'var(--text-muted)', fontSize: '0.88rem', marginTop: '4px'}}>
+                  Connect your real exchange account, view live balances, and toggle between Safe Demo and Live Spot Trading.
+                </div>
+              </div>
+
+              {/* Mode Switcher */}
+              <div style={{display: 'flex', gap: '8px', background: 'rgba(255,255,255,0.05)', padding: '4px', borderRadius: '12px', border: '1px solid var(--border-subtle)'}}>
+                <button
+                  type="button"
+                  onClick={() => setExchangeEnv('TESTNET')}
+                  style={{
+                    padding: '8px 18px',
+                    borderRadius: '8px',
+                    border: 'none',
+                    cursor: 'pointer',
+                    fontSize: '0.85rem',
+                    fontWeight: 800,
+                    background: exchangeEnv === 'TESTNET' ? 'var(--accent-cyan)' : 'transparent',
+                    color: exchangeEnv === 'TESTNET' ? '#000' : 'var(--text-muted)'
+                  }}
+                >
+                  🧪 Demo Testnet ($0 Risk)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (window.confirm("⚠️ SWITCH TO LIVE REAL MONEY:\nAre you sure you want to switch to LIVE Real Money Spot mode? Live orders will use real funds on Binance. (Withdrawals remain strictly blocked).")) {
+                      setExchangeEnv('LIVE');
+                    }
+                  }}
+                  style={{
+                    padding: '8px 18px',
+                    borderRadius: '8px',
+                    border: 'none',
+                    cursor: 'pointer',
+                    fontSize: '0.85rem',
+                    fontWeight: 800,
+                    background: exchangeEnv === 'LIVE' ? '#f43f5e' : 'transparent',
+                    color: exchangeEnv === 'LIVE' ? '#fff' : 'var(--text-muted)'
+                  }}
+                >
+                  🔴 Live Real Money (Binance)
+                </button>
+              </div>
+            </div>
+
+            {/* Zero Withdrawal Safety Mandate Banner */}
+            <div style={{
+              background: exchangeEnv === 'LIVE' ? 'rgba(244, 63, 94, 0.12)' : 'rgba(16, 185, 129, 0.1)',
+              border: exchangeEnv === 'LIVE' ? '1px solid rgba(244, 63, 94, 0.4)' : '1px solid rgba(16, 185, 129, 0.3)',
+              borderRadius: '12px',
+              padding: '1rem 1.4rem',
+              fontSize: '0.85rem',
+              lineHeight: '1.5'
+            }}>
+              <div style={{fontWeight: 800, fontSize: '0.95rem', color: exchangeEnv === 'LIVE' ? '#f43f5e' : '#10b981', marginBottom: '4px'}}>
+                🛡️ ZERO-WITHDRAWAL SAFETY MANDATE:
+              </div>
+              <div style={{color: 'var(--text-muted)'}}>
+                This trading bot has <strong>ZERO withdrawal permissions or capabilities</strong> programmed into its engine. When creating your API key on Binance, leave <em>"Enable Withdrawals"</em> <strong>UNCHECKED</strong>. This guarantees that your funds remain safely inside your Binance account and cannot be withdrawn by anyone.
+              </div>
+            </div>
+
+            {/* Live Wallet Asset Cards */}
+            <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1.2rem'}}>
+              <div className="glass-card" style={{padding: '1.2rem'}}>
+                <div style={{fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 700}}>SPOT USDT BALANCE</div>
+                <div style={{fontSize: '1.8rem', fontWeight: 900, color: '#10b981', marginTop: '4px'}}>
+                  ${(liveWalletData?.usdt_balance || 0).toFixed(2)} <span style={{fontSize: '0.9rem', color: 'var(--text-muted)'}}>USDT</span>
+                </div>
+                <div style={{fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '4px'}}>Available for autonomous trading</div>
+              </div>
+
+              <div className="glass-card" style={{padding: '1.2rem'}}>
+                <div style={{fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 700}}>SPOT BTC BALANCE</div>
+                <div style={{fontSize: '1.8rem', fontWeight: 900, color: '#ff9500', marginTop: '4px'}}>
+                  {(liveWalletData?.btc_balance || 0).toFixed(6)} <span style={{fontSize: '0.9rem', color: 'var(--text-muted)'}}>BTC</span>
+                </div>
+                <div style={{fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '4px'}}>Stored safely in spot wallet</div>
+              </div>
+
+              <div className="glass-card" style={{padding: '1.2rem'}}>
+                <div style={{fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 700}}>ACTIVE ENGINE MODE</div>
+                <div style={{fontSize: '1.4rem', fontWeight: 900, color: exchangeEnv === 'LIVE' ? '#f43f5e' : 'var(--accent-cyan)', marginTop: '4px'}}>
+                  {exchangeEnv === 'LIVE' ? '🔴 LIVE REAL SPOT' : '🧪 DEMO TESTNET'}
+                </div>
+                <div style={{fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '4px'}}>{liveWalletData?.exchange || 'Binance'}</div>
+              </div>
+
+              <div className="glass-card" style={{padding: '1.2rem'}}>
+                <div style={{fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 700}}>MAX CAPITAL CAP PER ORDER</div>
+                <div style={{fontSize: '1.8rem', fontWeight: 900, color: '#fff', marginTop: '4px'}}>
+                  ${(liveWalletData?.max_trade_cap_usd || maxTradeCapUsd).toFixed(2)} <span style={{fontSize: '0.9rem', color: 'var(--text-muted)'}}>USD</span>
+                </div>
+                <div style={{fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '4px'}}>Hard ceiling per single trade</div>
+              </div>
+            </div>
+
+            {/* API Configuration Form */}
+            <div className="glass-card" style={{border: exchangeEnv === 'LIVE' ? '1px solid rgba(244, 63, 94, 0.3)' : '1px solid var(--border-subtle)'}}>
+              <h3 style={{margin: '0 0 0.5rem 0', fontSize: '1.3rem', fontWeight: 800}}>
+                ⚙️ {exchangeEnv === 'LIVE' ? 'Binance Live API Credentials' : 'Binance Testnet API Credentials'}
+              </h3>
+              <div style={{color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '1.4rem'}}>
+                Enter your official Binance API credentials below. Credentials are encrypted and stored in memory.
+              </div>
+
+              {apiSaveMsg && (
+                <div style={{
+                  background: apiSaveMsg.includes('Connected') || apiSaveMsg.includes('saved') ? 'rgba(16, 185, 129, 0.15)' : 'rgba(244, 63, 94, 0.15)',
+                  border: apiSaveMsg.includes('Connected') || apiSaveMsg.includes('saved') ? '1px solid #10b981' : '1px solid #f43f5e',
+                  color: apiSaveMsg.includes('Connected') || apiSaveMsg.includes('saved') ? '#10b981' : '#f43f5e',
+                  padding: '0.9rem 1.2rem',
+                  borderRadius: '10px',
+                  marginBottom: '1.4rem',
+                  fontWeight: 700
+                }}>
+                  {apiSaveMsg}
+                </div>
+              )}
+
+              <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1.2rem', marginBottom: '1.2rem'}}>
+                <div>
+                  <label style={{display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '6px', fontWeight: 700}}>
+                    EXCHANGE REGION:
+                  </label>
+                  <select
+                    value={exchangeType}
+                    onChange={e => setExchangeType(e.target.value)}
+                    style={{width: '100%', padding: '10px', borderRadius: '8px', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-subtle)', color: '#fff'}}
+                  >
+                    <option value="BINANCE_GLOBAL">Binance Global (binance.com)</option>
+                    <option value="BINANCE_US">Binance US (binance.us)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '6px', fontWeight: 700}}>
+                    MAX TRADE CAP ($ PER ORDER):
+                  </label>
+                  <input
+                    type="number"
+                    min="5"
+                    max="1000"
+                    step="1"
+                    value={maxTradeCapUsd}
+                    onChange={e => setMaxTradeCapUsd(e.target.value)}
+                    style={{width: '100%', padding: '10px', borderRadius: '8px', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-subtle)', color: '#fff'}}
+                  />
+                </div>
+              </div>
+
+              <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: '1.2rem', alignItems: 'flex-end'}}>
+                <div>
+                  <label style={{display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '6px', fontWeight: 700}}>
+                    {exchangeEnv === 'LIVE' ? 'BINANCE LIVE API KEY' : 'BINANCE TESTNET API KEY'}
+                  </label>
+                  <input
+                    type="text"
+                    value={apiKeyInput}
+                    onChange={e => setApiKeyInput(e.target.value)}
+                    style={{width: '100%', padding: '10px', borderRadius: '8px', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-subtle)', color: '#fff'}}
+                    placeholder={exchangeEnv === 'LIVE' ? 'Paste your real Binance API Key' : 'Testnet Key'}
+                  />
+                </div>
+
+                <div>
+                  <label style={{display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '6px', fontWeight: 700}}>
+                    {exchangeEnv === 'LIVE' ? 'BINANCE LIVE API SECRET' : 'BINANCE TESTNET API SECRET'}
+                  </label>
+                  <input
+                    type="password"
+                    value={apiSecretInput}
+                    onChange={e => setApiSecretInput(e.target.value)}
+                    style={{width: '100%', padding: '10px', borderRadius: '8px', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-subtle)', color: '#fff'}}
+                    placeholder={exchangeEnv === 'LIVE' ? 'Paste your real Binance API Secret' : 'Testnet Secret'}
+                  />
+                </div>
+
+                <button
+                  className="btn-primary"
+                  onClick={saveApiSettings}
+                  style={{
+                    height: '44px',
+                    padding: '0 24px',
+                    background: exchangeEnv === 'LIVE' ? 'linear-gradient(135deg, #f43f5e, #e11d48)' : '',
+                    fontWeight: 800
+                  }}
+                >
+                  💾 {exchangeEnv === 'LIVE' ? 'Connect Live Wallet' : 'Save & Reconnect'}
+                </button>
+              </div>
+            </div>
+
+            {/* Step-by-Step Instructions */}
+            <div className="glass-card" style={{padding: '1.2rem'}}>
+              <h4 style={{margin: '0 0 0.8rem 0', fontSize: '1rem', fontWeight: 800, color: 'var(--accent-cyan)'}}>
+                📖 How to Get Your Binance API Key Safely:
+              </h4>
+              <ol style={{margin: 0, paddingLeft: '1.2rem', color: 'var(--text-muted)', fontSize: '0.84rem', lineHeight: '1.8'}}>
+                <li>Log into your official <strong>Binance.com</strong> account on your browser or app.</li>
+                <li>Go to <strong>Profile / Security</strong> → click <strong>API Management</strong>.</li>
+                <li>Click <strong>Create API</strong> (select <em>System generated</em>) and label it <code>QuantumBot</code>.</li>
+                <li>In <strong>API Restrictions</strong>:
+                  <ul style={{marginTop: '4px', marginBottom: '4px'}}>
+                    <li>✅ Check <strong>Enable Reading</strong></li>
+                    <li>✅ Check <strong>Enable Spot & Margin Trading</strong></li>
+                    <li>❌ <strong>STRICTLY LEAVE "Enable Withdrawals" UNCHECKED!</strong> (Never allow withdrawals)</li>
+                  </ul>
+                </li>
+                <li>Copy the <strong>API Key</strong> and <strong>Secret Key</strong>, paste them into the fields above, and click <strong>Connect Live Wallet</strong>!</li>
+              </ol>
+            </div>
           </div>
         )}
 
