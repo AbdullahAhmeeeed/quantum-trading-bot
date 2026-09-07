@@ -308,8 +308,8 @@ function App() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          api_key: apiKeyInput,
-          api_secret: apiSecretInput,
+          api_key: (apiKeyInput || '').replace(/\s+/g, ''),
+          api_secret: (apiSecretInput || '').replace(/\s+/g, ''),
           environment: exchangeEnv,
           exchange_type: exchangeType,
           max_trade_cap_usd: parseFloat(maxTradeCapUsd) || 10.0

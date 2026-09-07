@@ -16,8 +16,8 @@ class BinanceExchangeConnector:
         is_us: bool = False,
         max_trade_cap_usd: float = 10.0
     ):
-        self.api_key = api_key.strip() if api_key else ""
-        self.api_secret = api_secret.strip() if api_secret else ""
+        self.api_key = re.sub(r'\s+', '', api_key) if api_key else ""
+        self.api_secret = re.sub(r'\s+', '', api_secret) if api_secret else ""
         self.is_live = is_live
         self.is_us = is_us
         self.max_trade_cap_usd = max(1.0, float(max_trade_cap_usd))

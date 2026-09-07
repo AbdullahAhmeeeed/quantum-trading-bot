@@ -1035,19 +1035,22 @@ def update_api_settings(req: APISettingsRequest, db: Session = Depends(get_db)):
     is_us = (req.exchange_type.strip().upper() == "BINANCE_US")
     cap = max(1.0, float(req.max_trade_cap_usd or 10.0))
     
-    EXCHANGE_CONFIG["api_key"] = req.api_key.strip()
-    EXCHANGE_CONFIG["api_secret"] = req.api_secret.strip()
+    clean_key = re.sub(r'\s+', '', req.api_key or '')
+    clean_secret = re.sub(r'\s+', '', req.api_secret or '')
+    
+    EXCHANGE_CONFIG["api_key"] = clean_key
+    EXCHANGE_CONFIG["api_secret"] = clean_secret
     EXCHANGE_CONFIG["environment"] = "LIVE" if is_live else "TESTNET"
     EXCHANGE_CONFIG["exchange_type"] = "BINANCE_US" if is_us else "BINANCE_GLOBAL"
     EXCHANGE_CONFIG["max_trade_cap_usd"] = cap
     
-    TESTNET_API_KEY = req.api_key.strip()
-    TESTNET_API_SECRET = req.api_secret.strip()
+    TESTNET_API_KEY = clean_key
+    TESTNET_API_SECRET = clean_secret
     
     try:
         exchange_connector = BinanceExchangeConnector(
-            api_key=req.api_key.strip(),
-            api_secret=req.api_secret.strip(),
+            api_key=clean_key,
+            api_secret=clean_secret,
             is_live=is_live,
             is_us=is_us,
             max_trade_cap_usd=cap
