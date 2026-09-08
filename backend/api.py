@@ -59,12 +59,13 @@ from binance_live import BinanceExchangeConnector
 news_engine = NewsEngine()
 
 # Unified Binance Exchange State (Supports both Testnet and Live Real Money)
+# Unified Binance Exchange State (Supports both Testnet and Live Real Money)
 EXCHANGE_CONFIG = {
-    "api_key": "h6XpFOWFRsWY2liKkSdaJSYwwsGvHOjSp0U0c9Msek6Hpawl7KxJE7lgcNwnaKva",
-    "api_secret": "TUwUARgxEgyhAols3b5ypAvh5lEWqXZnAgKVNJAlGhAYbWJ2fisF4sGPVjFTFOxG",
-    "environment": "TESTNET",  # "TESTNET" or "LIVE"
+    "api_key": "TKPOw5KRJoitWUyAeyRCasZfCRUMxMGj8G9slwLJdBh7J82iVdbn9lwt0Eq5LDHH",
+    "api_secret": "VRRqxabECnCIesby2Zw1F7suRLZcSQOSYPVBpJwVkd6RTuz2lSAZr9Gs2g2cA8M0",
+    "environment": "LIVE",  # "TESTNET" or "LIVE"
     "exchange_type": "BINANCE_GLOBAL", # "BINANCE_GLOBAL" or "BINANCE_US"
-    "max_trade_cap_usd": 10.0,
+    "max_trade_cap_usd": 4.0,
 }
 
 TESTNET_API_KEY    = EXCHANGE_CONFIG["api_key"]
@@ -76,9 +77,9 @@ try:
     exchange_connector = BinanceExchangeConnector(
         api_key=EXCHANGE_CONFIG["api_key"],
         api_secret=EXCHANGE_CONFIG["api_secret"],
-        is_live=False,
+        is_live=True,
         is_us=False,
-        max_trade_cap_usd=10.0
+        max_trade_cap_usd=4.0
     )
     testnet = exchange_connector
 except Exception as e:
