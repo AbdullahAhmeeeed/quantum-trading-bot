@@ -569,6 +569,62 @@ async def keep_alive_self_ping_loop():
             print(f"[KeepAlive] Heartbeat ping notice: {e}")
         await asyncio.sleep(240)
 
+
+def sync_open_positions_from_exchange():
+    """Recovers active spot balances from Binance into the multi-slot manager if not tracked."""
+    global exchange_connector
+    if not exchange_connector or not getattr(exchange_connector, 'is_live', False):
+        return
+    try:
+        bal = exchange_connector.get_account_balance()
+        current_symbols = {p["symbol"] for p in bm.get_active_real_positions()}
+        for coin, data in bal.items():
+            if coin in ['USDT', 'USD', 'FDUSD']:
+                continue
+            qty = float(data.get('free', 0.0) or 0.0)
+            if qty <= 0:
+                continue
+            symbol = f"{coin}/USDT"
+            if symbol in current_symbols:
+                continue
+            price = exchange_connector.get_price(symbol)
+            usd_val = qty * price
+            if usd_val >= 0.85:  # Real spot holding above $0.85
+                entry_p = price
+                try:
+                    trades = exchange_connector.exchange.fetch_my_trades(symbol, limit=3)
+                    buys = [t for t in trades if t['side'] == 'buy']
+                    if buys:
+                        entry_p = float(buys[-1]['price'])
+                except Exception:
+                    pass
+                adaptive = tmem.get_adaptive_params()
+                learned_tp = adaptive.get("tp_pct", 0.018)
+                learned_sl = adaptive.get("sl_pct", 0.008)
+                pos = {
+                    "symbol": symbol,
+                    "entry_price": entry_p,
+                    "cost_usd": round(usd_val, 4),
+                    "target_price": entry_p * (1.0 + learned_tp),
+                    "stop_loss_price": entry_p * (1.0 - learned_sl),
+                    "tp_pct": learned_tp,
+                    "sl_pct": learned_sl,
+                    "trailing_dist_pct": adaptive.get("trailing_dist_pct", 0.008),
+                    "highest_price": max(entry_p, price),
+                    "lowest_price": min(entry_p, price),
+                    "opened_at": datetime.now(timezone.utc).isoformat(),
+                    "trailing_stop_active": False,
+                    "status": "HOLDING",
+                    "memory_trade_id": None,
+                    "is_runner": False,
+                    "confluence_score": 4
+                }
+                bm.add_real_position(pos)
+                print(f"[Sync] Recovered Binance spot holding {symbol} ({qty} coins @ ${entry_p}) into slot manager.")
+    except Exception as e:
+        print(f"[Sync] Notice: {e}")
+
+
 @app.on_event("startup")
 async def startup_event():
     global testnet
@@ -578,13 +634,25 @@ async def startup_event():
     bm.create_primary_bot()
     print(f"[Startup] Swarm initialized immediately. Active bots: {bm.get_swarm_summary()['active_count']}")
 
-    # 2. Launch autonomous trading loops immediately
+    # 2. Auto-enable real trading and recover active spot holdings if live keys configured
+    if exchange_connector and getattr(exchange_connector, 'is_live', False):
+        try:
+            status = exchange_connector.test_connection()
+            if status.get('connected'):
+                usdt_b = float(status.get('usdt_balance', 0.0) or 0.0)
+                bm.enable_real_trading(amount=max(1.0, usdt_b), mode="SAFE", initial_wallet_usd=2.68)
+                sync_open_positions_from_exchange()
+                print(f"[Startup] Live Real Spot execution AUTO-ENABLED with ${usdt_b:.2f} USDT")
+        except Exception as conn_err:
+            print(f"[Startup] Auto real trading notice: {conn_err}")
+
+    # 3. Launch autonomous trading loops immediately
     asyncio.create_task(autonomous_trading_loop())
     asyncio.create_task(swarm_trading_loop())
     asyncio.create_task(keep_alive_self_ping_loop())
     print("[Startup] Autonomous loops & 24/7 Keep-Alive ONLINE")
 
-    # 3. Asynchronous background ML model check (instant ready if pre-trained)
+    # 4. Asynchronous background ML model check (instant ready if pre-trained)
     async def _async_train():
         await asyncio.sleep(1)
         try:
@@ -1688,6 +1756,9 @@ async def swarm_trading_loop():
             # ─────────────────────────────────────────────────────────────────
             if bm.is_real_trading_enabled() and exchange_connector and getattr(exchange_connector, 'is_live', False):
                 active_positions = bm.get_active_real_positions()
+                if not active_positions:
+                    sync_open_positions_from_exchange()
+                    active_positions = bm.get_active_real_positions()
                 now_utc = datetime.now(timezone.utc)
                 active_bots = bm.get_active_bots()
                 bot_id = active_bots[0]["id"] if active_bots else "BOT-001-G1"
