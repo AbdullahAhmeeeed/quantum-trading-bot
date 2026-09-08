@@ -1387,6 +1387,17 @@ def allocate_swarm_real_money(req: SwarmRealMoneyRequest):
     }
 
 
+@app.post("/api/swarm/disable_real_trading")
+def disable_swarm_real_trading():
+    """Immediately stops real money orders on Binance and reverts to simulation mode."""
+    bm.disable_real_trading()
+    return {
+        "success": True,
+        "message": "Real Binance trading STOPPED. Bot is now running safely in simulation mode."
+    }
+
+
+
 @app.get("/api/market/opportunities")
 def get_market_opportunities():
     """Returns ranked trading opportunities across all pairs."""
