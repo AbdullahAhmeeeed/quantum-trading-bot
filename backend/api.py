@@ -1357,12 +1357,12 @@ def kill_swarm_bot(bot_id: str):
 
 class SwarmRealMoneyRequest(BaseModel):
     amount: float
-    mode: str = "AGGRESSIVE" # "SAFE" or "AGGRESSIVE"
+    mode: str = "SAFE" # Strictly "SAFE" (Institutional capital preservation)
 
 
 @app.post("/api/swarm/allocate_real_money")
 def allocate_swarm_real_money(req: SwarmRealMoneyRequest):
-    """Allocates real money to Swarm Little Bot and activates live Binance Spot execution with Safe vs Aggressive mode."""
+    """Allocates real money to Swarm Little Bot and activates live Binance Spot execution in Institutional SAFE mode."""
     global exchange_connector, testnet
     active_engine = exchange_connector or testnet
     if not active_engine or not getattr(active_engine, 'is_live', False):
@@ -1393,15 +1393,16 @@ def allocate_swarm_real_money(req: SwarmRealMoneyRequest):
     if usdt_bal > 0 and target_amt > usdt_bal:
         target_amt = usdt_bal
 
-    selected_mode = "AGGRESSIVE" if str(req.mode).upper() == "AGGRESSIVE" else "SAFE"
-    bot = bm.enable_real_trading(target_amt, mode=selected_mode, initial_wallet_usd=total_wallet_equity)
-    mode_label = "⚡ AGGRESSIVE (Safe Filters OFF)" if selected_mode == "AGGRESSIVE" else "🛡️ SAFE (Capital Guard)"
+    # Aggressive mode permanently removed: Strictly SAFE mode
+    selected_mode = "SAFE"
+    bot = bm.enable_real_trading(target_amt, mode="SAFE", initial_wallet_usd=total_wallet_equity)
+    mode_label = "🛡️ SAFE (Institutional Capital Guard)"
 
     return {
         "success": True,
         "message": f"Successfully allocated ${target_amt:.2f} REAL funds in {mode_label}! Real Binance Spot execution is ACTIVE.",
         "allocated_capital": target_amt,
-        "mode": selected_mode,
+        "mode": "SAFE",
         "initial_wallet_usd": total_wallet_equity,
         "bot": bot,
         "real_trading_active": True
@@ -1575,11 +1576,11 @@ async def swarm_trading_loop():
             # 4. Scan all opportunities across all assets
             opportunities = scan_opportunities(live_prices)
 
-            is_aggressive = (bm.get_real_trading_mode() == "AGGRESSIVE")
-            min_opp_score = 15 if is_aggressive else 35
-            min_conf_threshold = 0.40 if is_aggressive else 0.70
+            # Strict Institutional SAFE Mode (Capital Protection Guaranteed)
+            min_opp_score = 35
+            min_conf_threshold = 0.70
 
-            # Best actionable opportunity (Aggressive: score >= 15, Safe: score >= 35)
+            # Best actionable opportunity (SAFE: score >= 35)
             best_opp = next((o for o in opportunities if o["signal"] in ["BUY", "SELL"] and o["score"] >= min_opp_score), None)
 
             active_bots = bm.get_active_bots()
@@ -1593,7 +1594,7 @@ async def swarm_trading_loop():
                 if not best_opp:
                     with bm.swarm_lock:
                         if bot_id in bm.swarm_bots:
-                            bm.swarm_bots[bot_id]["thought"] = f"Hunting momentum ({'AGGRESSIVE' if is_aggressive else 'SAFE'})... Scanning {len(SWARM_TRADING_UNIVERSE)} coins. Bal: ${bot['current_balance']:.2f}"
+                            bm.swarm_bots[bot_id]["thought"] = f"Hunting momentum (🛡️ SAFE Institutional)... Scanning {len(SWARM_TRADING_UNIVERSE)} coins. Bal: ${bot['current_balance']:.2f}"
                     continue
 
                 pair = best_opp["pair"]
@@ -1609,9 +1610,9 @@ async def swarm_trading_loop():
                     df = s_inst.fetch_historical_data(limit=60)
                     ml_signal, ml_conf = strategy.generate_signals(df)
                     combined_conf = (opp_score / 100.0 * 0.4) + (ml_conf * 0.6)
-                    if ml_signal == "HOLD" and not is_aggressive:
+                    if ml_signal == "HOLD":
                         combined_conf *= 0.65
-                    final_signal = signal if combined_conf >= (0.35 if is_aggressive else 0.48) else "HOLD"
+                    final_signal = signal if combined_conf >= 0.48 else "HOLD"
                 except Exception:
                     combined_conf = opp_score / 100.0
                     final_signal = signal if combined_conf >= min_conf_threshold else "HOLD"
@@ -1619,17 +1620,16 @@ async def swarm_trading_loop():
                 if final_signal == "HOLD":
                     with bm.swarm_lock:
                         if bot_id in bm.swarm_bots:
-                            mode_desc = "Safe 70% threshold" if not is_aggressive else "40% edge threshold"
-                            bm.swarm_bots[bot_id]["thought"] = f"Analyzing {pair}... Edge {combined_conf*100:.0f}% < {mode_desc}. Monitoring..."
+                            bm.swarm_bots[bot_id]["thought"] = f"Analyzing {pair}... Edge {combined_conf*100:.0f}% < 70% threshold. Capital preserved. Monitoring..."
                     continue
 
-                # POSITION SIZING: Aggressive mode uses larger size & wider profit targets
+                # POSITION SIZING: Institutional Safe Mode (1% risk, strict SL/TP)
                 cur_bal = bot["current_balance"]
-                risk_pct = 0.035 if is_aggressive else 0.010
+                risk_pct = 0.010
                 trade_capital = max(cur_bal * risk_pct, 0.05)
 
-                sl_pct = 0.020 if is_aggressive else 0.012
-                tp_pct = 0.050 if is_aggressive else 0.030
+                sl_pct = 0.012
+                tp_pct = 0.030
                 fee_buffer = 0.0008
 
 

@@ -203,7 +203,7 @@ def update_bot_trade(bot_id: str, pnl_delta: float, pair: str, signal: str, conf
             bot["losing_trades"] += 1
             if bot["current_balance"] < 3.0:
                 bot["survival_state"] = "CRITICAL"
-                bot["thought"] = f"⚠️ CRITICAL SURVIVAL: Bal ${bot['current_balance']:.2f}! Aggressive recovery required on high-volatility meme coins!"
+                bot["thought"] = f"⚠️ CRITICAL SURVIVAL: Bal ${bot['current_balance']:.2f}! Strict capital preservation active."
             else:
                 bot["survival_state"] = "HUNTING"
                 bot["thought"] = f"❌ LOSS -${abs(pnl_delta):.2f} on {pair}. Recalibrating survival trajectory. Bal: ${bot['current_balance']:.2f}"
@@ -319,22 +319,22 @@ def set_primary_bot_capital(amount: float) -> dict:
             return create_primary_bot()
 
 
-real_trading_mode = "AGGRESSIVE" # "SAFE" or "AGGRESSIVE"
+real_trading_mode = "SAFE"
 initial_real_wallet_usd = 0.0
 
 
-def enable_real_trading(amount: float, mode: str = "AGGRESSIVE", initial_wallet_usd: float = 0.0) -> dict:
-    """Activates Real Money Binance Spot execution for the primary Swarm bot with selected mode."""
+def enable_real_trading(amount: float, mode: str = "SAFE", initial_wallet_usd: float = 0.0) -> dict:
+    """Activates Real Money Binance Spot execution exclusively in institutional SAFE mode."""
     global real_trading_active, real_allocated_capital, STARTING_CAPITAL, real_trading_mode, initial_real_wallet_usd
     with swarm_lock:
         cap = max(1.0, float(amount))
         real_trading_active = True
         real_allocated_capital = cap
-        real_trading_mode = "AGGRESSIVE" if str(mode).upper() == "AGGRESSIVE" else "SAFE"
+        real_trading_mode = "SAFE"
         initial_real_wallet_usd = float(initial_wallet_usd) if initial_wallet_usd > 0 else cap
         STARTING_CAPITAL = cap
         
-        mode_tag = "⚡ AGGRESSIVE MODE (Filters OFF)" if real_trading_mode == "AGGRESSIVE" else "🛡️ SAFE MODE (Capital Guard)"
+        mode_tag = "🛡️ SAFE INSTITUTIONAL MODE (70%+ ML Edge, Limit Entries)"
         active = [b for b in swarm_bots.values() if b["status"] == STATUS_ACTIVE]
         if active:
             bot = active[0]
@@ -342,7 +342,7 @@ def enable_real_trading(amount: float, mode: str = "AGGRESSIVE", initial_wallet_
             bot["current_balance"] = cap
             bot["daily_pnl"] = 0.0
             bot["is_real_money"] = True
-            bot["trading_mode"] = real_trading_mode
+            bot["trading_mode"] = "SAFE"
             bot["thought"] = f"🔴 REAL SPOT ACTIVE ({mode_tag}): ${cap:.2f} deployed on Binance."
             return bot
         else:
@@ -350,7 +350,7 @@ def enable_real_trading(amount: float, mode: str = "AGGRESSIVE", initial_wallet_
             bot["is_real_money"] = True
             bot["starting_capital"] = cap
             bot["current_balance"] = cap
-            bot["trading_mode"] = real_trading_mode
+            bot["trading_mode"] = "SAFE"
             bot["thought"] = f"🔴 REAL SPOT ACTIVE ({mode_tag}): ${cap:.2f} deployed on Binance."
             return bot
 

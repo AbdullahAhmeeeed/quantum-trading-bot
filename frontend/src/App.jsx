@@ -92,12 +92,12 @@ function App() {
   // Real Money Allocation Modal State
   const [showRealMoneyModal, setShowRealMoneyModal] = useState(false)
   const [selectedRealAmount, setSelectedRealAmount] = useState(3.0)
-  const [selectedRealMode, setSelectedRealMode] = useState('AGGRESSIVE') // 'SAFE' or 'AGGRESSIVE'
+  const [selectedRealMode, setSelectedRealMode] = useState('SAFE') // Locked to 'SAFE'
   const [realAllocating, setRealAllocating] = useState(false)
   const [realAllocationMsg, setRealAllocationMsg] = useState('')
   const [realWalletPnlData, setRealWalletPnlData] = useState(null)
 
-  const handleAllocateRealMoney = async (amt, mode = selectedRealMode) => {
+  const handleAllocateRealMoney = async (amt, mode = 'SAFE') => {
     setRealAllocating(true);
     try {
       const res = await fetch(`${API_BASE_URL}/api/swarm/allocate_real_money`, {
@@ -105,7 +105,7 @@ function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           amount: parseFloat(amt) || 3.0,
-          mode: mode || 'AGGRESSIVE'
+          mode: 'SAFE'
         })
       });
       const data = await res.json();
@@ -2774,15 +2774,15 @@ function App() {
                     Real Binance Wallet Live PnL
                   </span>
                   <span style={{
-                    background: realWalletPnlData?.mode === 'AGGRESSIVE' ? 'rgba(239, 68, 68, 0.25)' : 'rgba(16, 185, 129, 0.25)',
-                    border: realWalletPnlData?.mode === 'AGGRESSIVE' ? '1px solid #ef4444' : '1px solid #10b981',
+                    background: 'rgba(16, 185, 129, 0.25)',
+                    border: '1px solid #10b981',
                     padding: '2px 8px',
                     borderRadius: '6px',
                     fontSize: '0.72rem',
                     fontWeight: 900,
-                    color: realWalletPnlData?.mode === 'AGGRESSIVE' ? '#ef4444' : '#10b981'
+                    color: '#10b981'
                   }}>
-                    {realWalletPnlData?.mode === 'AGGRESSIVE' ? '⚡ AGGRESSIVE (FILTERS OFF)' : '🛡️ SAFE MODE'}
+                    🛡️ SAFE INSTITUTIONAL MODE
                   </span>
                   <span style={{
                     background: 'rgba(255, 255, 255, 0.08)',
@@ -3262,57 +3262,24 @@ function App() {
                 </div>
               </div>
 
-              {/* Strategy Mode Selection: SAFE vs AGGRESSIVE */}
+              {/* Strategy Mode: Institutional Safe Mode Locked */}
               <div style={{marginBottom: '1.4rem'}}>
-                <label style={{display: 'block', fontSize: '0.9rem', fontWeight: 800, color: 'var(--text-primary)', marginBottom: '8px'}}>
-                  Choose Trading Strategy Mode:
-                </label>
-                <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px'}}>
-                  {/* Safe Mode */}
-                  <div
-                    onClick={() => setSelectedRealMode('SAFE')}
-                    style={{
-                      padding: '12px 14px',
-                      borderRadius: '10px',
-                      cursor: 'pointer',
-                      border: selectedRealMode === 'SAFE' ? '2px solid #10b981' : '1px solid var(--border-subtle)',
-                      background: selectedRealMode === 'SAFE' ? 'rgba(16, 185, 129, 0.18)' : 'rgba(255, 255, 255, 0.03)',
-                      transition: 'all 0.15s ease',
-                      boxShadow: selectedRealMode === 'SAFE' ? '0 0 15px rgba(16, 185, 129, 0.3)' : 'none'
-                    }}
-                  >
-                    <div style={{display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px'}}>
-                      <span style={{fontSize: '1.1rem'}}>🛡️</span>
-                      <span style={{fontWeight: 900, fontSize: '0.9rem', color: selectedRealMode === 'SAFE' ? '#10b981' : '#fff'}}>
-                        SAFE MODE
-                      </span>
+                <div style={{
+                  padding: '14px 16px',
+                  borderRadius: '12px',
+                  border: '1px solid #10b981',
+                  background: 'rgba(16, 185, 129, 0.12)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '12px'
+                }}>
+                  <span style={{fontSize: '1.8rem'}}>🛡️</span>
+                  <div>
+                    <div style={{fontWeight: 900, fontSize: '0.95rem', color: '#10b981'}}>
+                      INSTITUTIONAL SAFE MODE (LOCKED)
                     </div>
-                    <div style={{fontSize: '0.72rem', color: 'var(--text-muted)', lineHeight: '1.4'}}>
-                      Strict 70%+ ML edge, Limit orders, 3-5% target. Capital preservation.
-                    </div>
-                  </div>
-
-                  {/* Aggressive Mode */}
-                  <div
-                    onClick={() => setSelectedRealMode('AGGRESSIVE')}
-                    style={{
-                      padding: '12px 14px',
-                      borderRadius: '10px',
-                      cursor: 'pointer',
-                      border: selectedRealMode === 'AGGRESSIVE' ? '2px solid #ef4444' : '1px solid var(--border-subtle)',
-                      background: selectedRealMode === 'AGGRESSIVE' ? 'rgba(239, 68, 68, 0.2)' : 'rgba(255, 255, 255, 0.03)',
-                      transition: 'all 0.15s ease',
-                      boxShadow: selectedRealMode === 'AGGRESSIVE' ? '0 0 15px rgba(239, 68, 68, 0.35)' : 'none'
-                    }}
-                  >
-                    <div style={{display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px'}}>
-                      <span style={{fontSize: '1.1rem'}}>⚡</span>
-                      <span style={{fontWeight: 900, fontSize: '0.9rem', color: selectedRealMode === 'AGGRESSIVE' ? '#ef4444' : '#fff'}}>
-                        AGGRESSIVE
-                      </span>
-                    </div>
-                    <div style={{fontSize: '0.72rem', color: 'var(--text-muted)', lineHeight: '1.4'}}>
-                      <strong>Filters REMOVED!</strong> 40%+ confidence trigger on fast meme movers.
+                    <div style={{fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px', lineHeight: '1.4'}}>
+                      Strict 70%+ ML Edge, Limit Orders, 1.2% Stop-Loss & 3.0% Take-Profit. Capital preservation guaranteed.
                     </div>
                   </div>
                 </div>
@@ -3330,7 +3297,7 @@ function App() {
                 border: '1px solid var(--border-subtle)'
               }}>
                 <div>✅ <strong>Binance Spot Execution:</strong> Trades real orders for DOGE, PEPE, SHIB, BONK, WIF ($1.00 min size).</div>
-                <div>⚡ <strong>Mode Profile:</strong> {selectedRealMode === 'AGGRESSIVE' ? 'High frequency rapid scalps (Safe filters bypassed)' : 'Low risk capital guard with limit entry'}.</div>
+                <div>🛡️ <strong>Safety Profile:</strong> 70%+ ML edge confluence, Limit entries, 1.0% risk per trade.</div>
                 <div>🔒 <strong>Zero-Withdrawal Security:</strong> Funds remain 100% inside your Binance account.</div>
               </div>
 
@@ -3371,21 +3338,21 @@ function App() {
                 <button
                   type="button"
                   disabled={realAllocating}
-                  onClick={() => handleAllocateRealMoney(selectedRealAmount, selectedRealMode)}
+                  onClick={() => handleAllocateRealMoney(selectedRealAmount, 'SAFE')}
                   style={{
                     flex: 2,
                     padding: '12px',
                     borderRadius: '10px',
                     border: 'none',
-                    background: selectedRealMode === 'AGGRESSIVE' ? 'linear-gradient(135deg, #ef4444, #dc2626)' : 'linear-gradient(135deg, #10b981, #059669)',
+                    background: 'linear-gradient(135deg, #10b981, #059669)',
                     color: '#fff',
                     fontWeight: 900,
                     fontSize: '0.95rem',
                     cursor: realAllocating ? 'not-allowed' : 'pointer',
-                    boxShadow: selectedRealMode === 'AGGRESSIVE' ? '0 0 25px rgba(239, 68, 68, 0.4)' : '0 0 25px rgba(16, 185, 129, 0.4)'
+                    boxShadow: '0 0 25px rgba(16, 185, 129, 0.4)'
                   }}
                 >
-                  {realAllocating ? 'Allocating on Binance...' : `🚀 Start ${selectedRealMode === 'AGGRESSIVE' ? 'Aggressive' : 'Safe'} Trading ($${Number(selectedRealAmount).toFixed(2)})`}
+                  {realAllocating ? 'Allocating on Binance...' : `🚀 Start Safe Live Trading ($${Number(selectedRealAmount).toFixed(2)})`}
                 </button>
               </div>
             </div>
