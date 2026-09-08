@@ -19,6 +19,7 @@ from pydantic import BaseModel
 import bot_manager as bm
 from opportunity_scanner import scan_opportunities, get_cached_opportunities, get_best_opportunity, DEFAULT_PRICES, TRADING_UNIVERSE
 from datetime import datetime, timezone
+from typing import Optional, List, Dict
 
 # Create database tables
 models.Base.metadata.create_all(bind=engine)
@@ -1488,47 +1489,83 @@ def get_swarm_real_pnl():
 
 @app.get("/api/swarm/active_position")
 def get_swarm_active_position():
-    """Returns the currently active Real Spot holding position with live unrealized PnL."""
+    """Returns all currently active Real Spot holding positions with live unrealized PnL."""
     global exchange_connector, testnet
     active_engine = exchange_connector or testnet
-    pos = bm.get_active_real_position()
-    if not pos:
-        return {"has_position": False, "position": None}
+    positions = bm.get_active_real_positions()
     
-    if active_engine and getattr(active_engine, 'is_live', False):
-        try:
-            curr_p = active_engine.get_price(pos["symbol"])
-            if curr_p > 0:
-                pos = bm.update_real_position_price(curr_p)
-        except Exception:
-            pass
-            
+    updated_positions = []
+    for pos in positions:
+        sym = pos.get("symbol")
+        if active_engine and getattr(active_engine, 'is_live', False):
+            try:
+                curr_p = active_engine.get_price(sym)
+                if curr_p > 0:
+                    u_pos = bm.update_real_position_price(sym, curr_p)
+                    if u_pos:
+                        pos = u_pos
+            except Exception:
+                pass
+        updated_positions.append(pos)
+        
+    has_pos = len(updated_positions) > 0
+    primary_pos = updated_positions[0] if has_pos else None
     return {
-        "has_position": True,
-        "position": pos
+        "has_position": has_pos,
+        "position": primary_pos,
+        "positions": updated_positions,
+        "count": len(updated_positions),
+        "max_slots": bm.MAX_CONCURRENT_REAL_POSITIONS
     }
 
 
 @app.post("/api/swarm/close_position")
-def manual_close_swarm_position():
-    """Manually sells the active spot position on Binance at market."""
+def manual_close_swarm_position(symbol: Optional[str] = None):
+    """Manually sells active spot position(s) on Binance at market."""
     global exchange_connector, testnet
     active_engine = exchange_connector or testnet
-    pos = bm.get_active_real_position()
-    if not pos:
-        return {"success": False, "error": "No open real position to close."}
-    
-    symbol = pos["symbol"]
-    if active_engine and getattr(active_engine, 'is_live', False):
-        try:
+    positions = bm.get_active_real_positions()
+    if symbol and symbol not in [p.get("symbol") for p in positions]:
+        if active_engine and getattr(active_engine, 'is_live', False):
             sell_res = active_engine.place_market_order(symbol=symbol, side='SELL')
-            bm.clear_active_real_position()
-            return {"success": True, "message": f"Successfully closed {symbol} on Binance!", "result": sell_res}
-        except Exception as e:
-            return {"success": False, "error": str(e)}
-    else:
-        bm.clear_active_real_position()
-        return {"success": True, "message": f"Position {symbol} cleared."}
+            if sell_res.get("success"):
+                return {"success": True, "message": f"Successfully sold {symbol} on Binance Spot!", "result": sell_res}
+            else:
+                return {"success": False, "error": sell_res.get("error", f"Failed to sell {symbol}")}
+        else:
+            return {"success": False, "error": f"Live exchange connector not active for {symbol}"}
+
+    if not positions:
+        return {"success": False, "error": "No open real positions to close."}
+    
+    targets = [p for p in positions if p.get("symbol") == symbol] if symbol else positions
+        
+    closed = []
+    errors = []
+    for pos in targets:
+        sym = pos.get("symbol")
+        if active_engine and getattr(active_engine, 'is_live', False):
+            try:
+                sell_res = active_engine.place_market_order(symbol=sym, side='SELL')
+                if sell_res.get("success"):
+                    bm.remove_real_position(sym)
+                    closed.append(sym)
+                else:
+                    err_msg = sell_res.get("error", "Unknown sell failure")
+                    if "NOTIONAL" in str(err_msg):
+                        bm.remove_real_position(sym)
+                        closed.append(f"{sym} (cleared - dust below Binance $1.00 min notional)")
+                    else:
+                        errors.append(f"{sym}: {err_msg}")
+            except Exception as e:
+                errors.append(f"{sym}: {str(e)}")
+        else:
+            bm.remove_real_position(sym)
+            closed.append(sym)
+            
+    if errors and not closed:
+        return {"success": False, "error": "; ".join(errors)}
+    return {"success": True, "message": f"Closed positions: {', '.join(closed)}", "closed": closed, "errors": errors}
 
 
 @app.get("/api/market/opportunities")
@@ -1614,140 +1651,197 @@ async def swarm_trading_loop():
             opportunities = scan_opportunities(live_prices)
 
             # ─────────────────────────────────────────────────────────────────
-            # REAL TRADING EXECUTION: STATEFUL POSITION MONITORING & PROFIT ENGINE
+            # REAL TRADING EXECUTION: MULTI-SLOT POSITION MONITORING & SCALPING
             # ─────────────────────────────────────────────────────────────────
             if bm.is_real_trading_enabled() and exchange_connector and getattr(exchange_connector, 'is_live', False):
-                active_real_pos = bm.get_active_real_position()
+                active_positions = bm.get_active_real_positions()
+                now_utc = datetime.now(timezone.utc)
+                active_bots = bm.get_active_bots()
+                bot_id = active_bots[0]["id"] if active_bots else "BOT-001-G1"
 
-                if active_real_pos:
-                    # An active real position is currently open on Binance!
-                    sym = active_real_pos["symbol"]
+                # 1. MONITOR AND MANAGE ALL OPEN REAL POSITIONS
+                for active_real_pos in list(active_positions):
+                    sym = active_real_pos.get("symbol")
+                    if not sym:
+                        continue
                     live_p = exchange_connector.get_price(sym)
-                    if live_p > 0:
-                        updated_pos = bm.update_real_position_price(live_p) or active_real_pos
-                        entry_p = updated_pos["entry_price"]
-                        target_p = updated_pos["target_price"]
-                        stop_p = updated_pos["stop_loss_price"]
-                        pnl_pct = updated_pos.get("unrealized_pnl_pct", 0.0)
-                        pnl_usd = updated_pos.get("unrealized_pnl_usd", 0.0)
+                    if live_p <= 0:
+                        continue
 
-                        active_bots = bm.get_active_bots()
-                        bot_id = active_bots[0]["id"] if active_bots else "BOT-001-G1"
+                    # Update price, trailing stop & trailing take-profit
+                    updated_pos = bm.update_real_position_price(sym, live_p) or active_real_pos
+                    entry_p = float(updated_pos.get("entry_price", live_p))
+                    target_p = float(updated_pos.get("target_price", entry_p * 1.018))
+                    stop_p = float(updated_pos.get("stop_loss_price", entry_p * 0.992))
+                    pnl_pct = updated_pos.get("unrealized_pnl_pct", 0.0)
+                    pnl_usd = updated_pos.get("unrealized_pnl_usd", 0.0)
 
-                        # 1. TAKE PROFIT CHECK (+2.8% target hit)
-                        if live_p >= target_p:
-                            sell_res = exchange_connector.place_market_order(symbol=sym, side='SELL')
-                            if sell_res.get('success'):
-                                bm.clear_active_real_position()
-                                profit_msg = f"🏆 REAL SPOT TAKE-PROFIT HIT! Sold {sym} @ ${live_p:.6f} (+{pnl_pct:.2f}% | +${pnl_usd:.4f} USD) | Binance Profit Locked!"
-                                with bm.swarm_lock:
-                                    if bot_id in bm.swarm_bots:
-                                        bm.swarm_bots[bot_id]["thought"] = profit_msg
-                                        bm.swarm_bots[bot_id]["winning_trades"] += 1
-                                        bm.swarm_bots[bot_id]["daily_pnl"] += pnl_usd
-                                for conn in list(active_connections):
-                                    try:
-                                        await conn.send_json({"log": profit_msg, "swarm_update": True})
-                                    except Exception:
-                                        pass
-                                await asyncio.sleep(4)
-                                continue
+                    # Stagnation check: If held > 25 minutes with near-zero movement (|pnl| < 0.5%), exit to free slot
+                    is_stagnant = False
+                    opened_at_str = updated_pos.get("opened_at")
+                    if opened_at_str:
+                        try:
+                            opened_time = datetime.fromisoformat(opened_at_str)
+                            if (now_utc - opened_time).total_seconds() > 1500 and abs(pnl_pct) < 0.5:
+                                is_stagnant = True
+                        except Exception:
+                            pass
 
-                        # 2. STOP LOSS CHECK (-1.5% SL hit)
-                        elif live_p <= stop_p:
-                            sell_res = exchange_connector.place_market_order(symbol=sym, side='SELL')
-                            if sell_res.get('success'):
-                                bm.clear_active_real_position()
-                                sl_msg = f"🛡️ REAL SPOT STOP-LOSS TRIGGERED: Sold {sym} @ ${live_p:.6f} ({pnl_pct:.2f}% | -${abs(pnl_usd):.4f} USD) to protect capital."
-                                with bm.swarm_lock:
-                                    if bot_id in bm.swarm_bots:
-                                        bm.swarm_bots[bot_id]["thought"] = sl_msg
-                                        bm.swarm_bots[bot_id]["losing_trades"] += 1
-                                        bm.swarm_bots[bot_id]["daily_pnl"] += pnl_usd
-                                for conn in list(active_connections):
-                                    try:
-                                        await conn.send_json({"log": sl_msg, "swarm_update": True})
-                                    except Exception:
-                                        pass
-                                await asyncio.sleep(4)
-                                continue
-
-                        # 3. POSITION ACTIVE: HOLDING & MONITORING
-                        else:
-                            trail_tag = " [Trailing Stop Active]" if updated_pos.get("trailing_stop_active") else ""
-                            holding_thought = (
-                                f"🟢 HOLDING {sym} @ ${entry_p:.6f} | Live: ${live_p:.6f} "
-                                f"({'+' if pnl_pct >= 0 else ''}{pnl_pct:.2f}% / ${pnl_usd:+.3f}) | "
-                                f"TP: ${target_p:.6f} (+{updated_pos.get('tp_pct', 0.028)*100:.1f}%) | "
-                                f"SL: ${stop_p:.6f}{trail_tag}"
-                            )
+                    # A. TAKE PROFIT CHECK
+                    if live_p >= target_p:
+                        sell_res = exchange_connector.place_market_order(symbol=sym, side='SELL')
+                        if sell_res.get('success'):
+                            bm.remove_real_position(sym)
+                            profit_msg = f"🏆 REAL SPOT TAKE-PROFIT HIT! Sold {sym} @ ${live_p:.8f} (+{pnl_pct:.2f}% | +${pnl_usd:.4f} USD) | Binance Profit Locked!"
                             with bm.swarm_lock:
                                 if bot_id in bm.swarm_bots:
-                                    bm.swarm_bots[bot_id]["thought"] = holding_thought
-                                    bm.swarm_bots[bot_id]["active_pair"] = sym
-
-                            # Do not enter new positions while one is active!
-                            await asyncio.sleep(3)
+                                    bm.swarm_bots[bot_id]["thought"] = profit_msg
+                                    bm.swarm_bots[bot_id]["winning_trades"] += 1
+                                    bm.swarm_bots[bot_id]["daily_pnl"] += pnl_usd
+                            for conn in list(active_connections):
+                                try:
+                                    await conn.send_json({"log": profit_msg, "swarm_update": True})
+                                except Exception:
+                                    pass
                             continue
 
-                else:
-                    # NO POSITION OPEN: Scan for High-Probability Spot Entry
-                    candidate_pairs = ["DOGE/USDT", "PEPE/USDT", "SHIB/USDT", "BONK/USDT", "WIF/USDT"]
-                    best_real_opp = None
-                    for cp in candidate_pairs:
-                        cp_price = live_prices.get(cp, 0.0)
-                        if cp_price <= 0:
+                    # B. TRAILING STOP OR STOP LOSS CHECK
+                    elif live_p <= stop_p:
+                        sell_res = exchange_connector.place_market_order(symbol=sym, side='SELL')
+                        if sell_res.get('success'):
+                            bm.remove_real_position(sym)
+                            is_win = pnl_pct >= 0
+                            sl_tag = "🎉 TRAILING PROFIT SECURED" if is_win else "🛡️ REAL SPOT STOP-LOSS TRIGGERED"
+                            sl_msg = f"{sl_tag}: Sold {sym} @ ${live_p:.8f} ({pnl_pct:+.2f}% | {pnl_usd:+.4f} USD) to protect capital."
+                            with bm.swarm_lock:
+                                if bot_id in bm.swarm_bots:
+                                    bm.swarm_bots[bot_id]["thought"] = sl_msg
+                                    if is_win:
+                                        bm.swarm_bots[bot_id]["winning_trades"] += 1
+                                    else:
+                                        bm.swarm_bots[bot_id]["losing_trades"] += 1
+                                    bm.swarm_bots[bot_id]["daily_pnl"] += pnl_usd
+                            for conn in list(active_connections):
+                                try:
+                                    await conn.send_json({"log": sl_msg, "swarm_update": True})
+                                except Exception:
+                                    pass
                             continue
-                        try:
-                            s_inst = pair_streamers.get(cp) or DataStreamer(symbol=cp, timeframe="1m")
-                            df = s_inst.fetch_historical_data(limit=60)
-                            ml_sig, ml_cf = strategy.generate_signals(df)
-                            if ml_sig == "BUY" and ml_cf >= 0.72:
-                                best_real_opp = (cp, cp_price, ml_cf)
-                                break
-                        except Exception:
+                        else:
+                            err = sell_res.get("error", "")
+                            if "NOTIONAL" in str(err):
+                                bm.remove_real_position(sym)
+                                warn_msg = f"⚠️ {sym} balance is dust below Binance $1.00 min notional; removed from active slots."
+                                for conn in list(active_connections):
+                                    try:
+                                        await conn.send_json({"log": warn_msg, "swarm_update": True})
+                                    except Exception:
+                                        pass
                             continue
 
-                    if best_real_opp:
-                        r_pair, r_price, r_conf = best_real_opp
-                        try:
-                            bal_info = exchange_connector.get_account_balance()
-                            free_usdt = float(bal_info.get("USDT", {}).get("free", 0.0) or 0.0)
-                            if free_usdt >= 1.0:
-                                trade_size_usd = round(min(max(1.0, free_usdt * 0.5), 1.50), 2)
-                                buy_res = exchange_connector.place_market_order(
-                                    symbol=r_pair,
-                                    side='BUY',
-                                    usdt_amount=trade_size_usd
-                                )
-                                if buy_res.get('success'):
-                                    fill_p = float(buy_res.get('price', r_price))
-                                    target_price = round(fill_p * 1.028, 6) # +2.8% Take-Profit Target
-                                    stop_price = round(fill_p * 0.985, 6)   # -1.5% Stop-Loss
-                                    new_pos = {
-                                        "symbol": r_pair,
-                                        "entry_price": fill_p,
-                                        "cost_usd": trade_size_usd,
-                                        "target_price": target_price,
-                                        "stop_loss_price": stop_price,
-                                        "tp_pct": 0.028,
-                                        "sl_pct": 0.015,
-                                        "highest_price": fill_p,
-                                        "opened_at": datetime.now(timezone.utc).isoformat(),
-                                        "trailing_stop_active": False,
-                                        "status": "HOLDING"
-                                    }
-                                    bm.set_active_real_position(new_pos)
-                                    entry_log = f"🚀 REAL SPOT BUY EXECUTED: {r_pair} @ ${fill_p:.6f} (${trade_size_usd} deployed). Target: ${target_price:.6f} (+2.8%). HOLDING ON BINANCE!"
-                                    for conn in list(active_connections):
-                                        try:
-                                            await conn.send_json({"log": entry_log, "swarm_update": True})
-                                        except Exception:
-                                            pass
-                                    await asyncio.sleep(3)
-                                    continue
-                        except Exception as enter_err:
-                            print(f"[Real Spot Entry Error] {enter_err}")
+                    # C. STAGNATION TIMEOUT ROTATION
+                    elif is_stagnant:
+                        sell_res = exchange_connector.place_market_order(symbol=sym, side='SELL')
+                        if sell_res.get('success'):
+                            bm.remove_real_position(sym)
+                            stag_msg = f"⏰ 25-MIN STAGNATION TIMEOUT: Sold {sym} @ ${live_p:.8f} ({pnl_pct:+.2f}%) to free slot for high-velocity coins."
+                            for conn in list(active_connections):
+                                try:
+                                    await conn.send_json({"log": stag_msg, "swarm_update": True})
+                                except Exception:
+                                    pass
+                            continue
+
+                    # D. POSITION ACTIVE: HOLDING & MONITORING
+                    else:
+                        trail_tag = " [Trailing Stop Active]" if updated_pos.get("trailing_stop_active") else ""
+                        holding_thought = (
+                            f"🟢 SLOT HOLDING {sym} @ ${entry_p:.8f} | Live: ${live_p:.8f} "
+                            f"({'+' if pnl_pct >= 0 else ''}{pnl_pct:.2f}% / ${pnl_usd:+.3f}) | "
+                            f"TP: ${target_p:.8f} | SL: ${stop_p:.8f}{trail_tag}"
+                        )
+                        with bm.swarm_lock:
+                            if bot_id in bm.swarm_bots:
+                                bm.swarm_bots[bot_id]["thought"] = holding_thought
+                                bm.swarm_bots[bot_id]["active_pair"] = sym
+
+                # 2. CHECK IF NEW REAL POSITION CAN BE OPENED
+                if bm.can_open_new_position():
+                    current_positions = bm.get_active_real_positions()
+                    current_symbols = {p["symbol"] for p in current_positions}
+                    
+                    try:
+                        bal_info = exchange_connector.get_account_balance()
+                        free_usdt = float(bal_info.get("USDT", {}).get("free", 0.0) or 0.0)
+                        
+                        # Minimum capital required to safely open a Binance Spot position above $1.00 notional
+                        if free_usdt >= 1.08:
+                            slots_available = max(1, bm.MAX_CONCURRENT_REAL_POSITIONS - len(current_symbols))
+                            # Allocate safely between $1.08 and $1.15 per slot
+                            trade_size_usd = round(min(1.15, max(1.08, free_usdt / slots_available)), 2)
+                            if trade_size_usd > free_usdt:
+                                trade_size_usd = round(free_usdt - 0.01, 2)
+                                
+                            if trade_size_usd >= 1.05:
+                                candidate_pairs = ["DOGE/USDT", "PEPE/USDT", "SHIB/USDT", "BONK/USDT", "WIF/USDT"]
+                                best_real_opp = None
+                                for cp in candidate_pairs:
+                                    if cp in current_symbols:
+                                        continue  # Already holding this pair!
+                                    cp_price = live_prices.get(cp, 0.0)
+                                    if cp_price <= 0:
+                                        continue
+                                    try:
+                                        s_inst = pair_streamers.get(cp) or DataStreamer(symbol=cp, timeframe="1m")
+                                        df = s_inst.fetch_historical_data(limit=60)
+                                        ml_sig, ml_cf = strategy.generate_signals(df)
+                                        if ml_sig == "BUY" and ml_cf >= 0.70:
+                                            best_real_opp = (cp, cp_price, ml_cf)
+                                            break
+                                    except Exception:
+                                        continue
+
+                                if best_real_opp:
+                                    r_pair, r_price, r_conf = best_real_opp
+                                    buy_res = exchange_connector.place_market_order(
+                                        symbol=r_pair,
+                                        side='BUY',
+                                        usdt_amount=trade_size_usd
+                                    )
+                                    if buy_res.get('success'):
+                                        fill_p = float(buy_res.get('price', r_price))
+                                        # Fast micro-scalping targets (+1.8% TP, -0.8% Trailing SL gap)
+                                        target_price = fill_p * 1.018
+                                        stop_price = fill_p * (1.0 - 0.008)
+                                        new_pos = {
+                                            "symbol": r_pair,
+                                            "entry_price": fill_p,
+                                            "cost_usd": trade_size_usd,
+                                            "target_price": target_price,
+                                            "stop_loss_price": stop_price,
+                                            "tp_pct": 0.018,
+                                            "sl_pct": 0.008,
+                                            "trailing_dist_pct": 0.008,
+                                            "highest_price": fill_p,
+                                            "opened_at": datetime.now(timezone.utc).isoformat(),
+                                            "trailing_stop_active": False,
+                                            "status": "HOLDING"
+                                        }
+                                        bm.add_real_position(new_pos)
+                                        entry_log = (
+                                            f"🚀 REAL SPOT BUY [{len(bm.get_active_real_positions())}/{bm.MAX_CONCURRENT_REAL_POSITIONS}]: "
+                                            f"{r_pair} @ ${fill_p:.8f} (${trade_size_usd} USDT deployed). "
+                                            f"Target: ${target_price:.8f} (+1.8%) | Trailing SL: ${stop_price:.8f} (-0.8%)"
+                                        )
+                                        for conn in list(active_connections):
+                                            try:
+                                                await conn.send_json({"log": entry_log, "swarm_update": True})
+                                            except Exception:
+                                                pass
+                                        await asyncio.sleep(2)
+                                        continue
+                    except Exception as enter_err:
+                        print(f"[Real Spot Entry Error] {enter_err}")
 
             # ─────────────────────────────────────────────────────────────────
             # SIMULATION / PAPER SWARM ENGINE (Runs when real money is idle)

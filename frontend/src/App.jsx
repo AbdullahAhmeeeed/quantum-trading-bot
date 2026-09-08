@@ -100,12 +100,18 @@ function App() {
   const [realAllocationMsg, setRealAllocationMsg] = useState('')
   const [realWalletPnlData, setRealWalletPnlData] = useState(null)
   const [activePositionData, setActivePositionData] = useState(null)
+  const [activePositions, setActivePositions] = useState([])
   const [closingPosition, setClosingPosition] = useState(false)
+  const [closingSymbol, setClosingSymbol] = useState(null)
 
-  const handleClosePosition = async () => {
+  const handleClosePosition = async (symbol = null) => {
     setClosingPosition(true);
+    setClosingSymbol(symbol);
     try {
-      const res = await fetch(`${API_BASE_URL}/api/swarm/close_position`, { method: 'POST' });
+      const url = symbol 
+        ? `${API_BASE_URL}/api/swarm/close_position?symbol=${encodeURIComponent(symbol)}`
+        : `${API_BASE_URL}/api/swarm/close_position`;
+      const res = await fetch(url, { method: 'POST' });
       const data = await res.json();
       if (data.success) {
         playSound('SUCCESS');
@@ -116,6 +122,7 @@ function App() {
       console.error(err);
     } finally {
       setClosingPosition(false);
+      setClosingSymbol(null);
     }
   };
 
@@ -632,7 +639,9 @@ function App() {
       if (pnlRes.ok) setRealWalletPnlData(await pnlRes.json());
       if (posRes && posRes.ok) {
         const posData = await posRes.json();
-        setActivePositionData(posData.has_position ? posData.position : null);
+        const list = posData.positions || (posData.position ? [posData.position] : []);
+        setActivePositions(list);
+        setActivePositionData(list.length > 0 ? list[0] : null);
       }
     } catch (e) {
       // quiet fallback
@@ -2860,113 +2869,191 @@ function App() {
               </div>
             </div>
 
-            {/* Active Real Spot Holding & Profit Tracker Card */}
-            {activePositionData ? (
-              <div style={{
-                background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.16), rgba(6, 78, 59, 0.4))',
-                border: '1px solid #10b981',
-                borderRadius: '12px',
-                padding: '1.2rem 1.4rem',
-                marginBottom: '1.4rem',
-                boxShadow: '0 0 35px rgba(16, 185, 129, 0.25)',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                flexWrap: 'wrap',
-                gap: '1.2rem'
-              }}>
-                <div style={{flex: 1, minWidth: '260px'}}>
-                  <div style={{display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px', flexWrap: 'wrap'}}>
-                    <span style={{fontSize: '1.3rem'}}>🟢</span>
-                    <span style={{fontWeight: 900, fontSize: '1.15rem', color: '#fff'}}>
-                      HOLDING SPOT POSITION: <span style={{color: '#38bdf8'}}>{activePositionData.symbol}</span>
+            {/* Active Real Spot Multi-Slot Engine & Profit Tracker */}
+            {activePositions && activePositions.length > 0 ? (
+              <div style={{marginBottom: '1.4rem', display: 'flex', flexDirection: 'column', gap: '1rem'}}>
+                <div style={{
+                  display: 'flex', 
+                  justifyContent: 'space-between', 
+                  alignItems: 'center',
+                  padding: '0.4rem 0.2rem'
+                }}>
+                  <div style={{display: 'flex', alignItems: 'center', gap: '10px'}}>
+                    <span style={{fontSize: '1.2rem'}}>⚡</span>
+                    <span style={{fontWeight: 900, fontSize: '1rem', color: '#fff'}}>
+                      ACTIVE LIVE SPOT SLOTS ({activePositions.length}/3)
                     </span>
                     <span style={{
-                      background: 'rgba(16, 185, 129, 0.3)',
-                      color: '#10b981',
-                      border: '1px solid #10b981',
+                      background: 'rgba(56, 189, 248, 0.2)',
+                      color: '#38bdf8',
+                      border: '1px solid #38bdf8',
                       padding: '2px 8px',
                       borderRadius: '6px',
                       fontSize: '0.72rem',
-                      fontWeight: 900
+                      fontWeight: 800
                     }}>
-                      AWAITING TAKE-PROFIT (+{(activePositionData.tp_pct * 100).toFixed(1)}%)
+                      SYNCHRONOUS TRAILING SL & TP
                     </span>
-                    {activePositionData.trailing_stop_active && (
-                      <span style={{
-                        background: 'rgba(56, 189, 248, 0.25)',
-                        color: '#38bdf8',
-                        border: '1px solid #38bdf8',
-                        padding: '2px 8px',
+                  </div>
+                  {activePositions.length > 1 && (
+                    <button
+                      type="button"
+                      disabled={closingPosition}
+                      onClick={() => handleClosePosition(null)}
+                      style={{
+                        background: 'rgba(244, 63, 94, 0.15)',
+                        border: '1px solid #f43f5e',
+                        color: '#f43f5e',
+                        padding: '4px 12px',
                         borderRadius: '6px',
-                        fontSize: '0.72rem',
-                        fontWeight: 900
-                      }}>
-                        🛡️ TRAILING STOP LOCKED
-                      </span>
-                    )}
-                  </div>
-                  <div style={{fontSize: '0.8rem', color: 'var(--text-muted)'}}>
-                    Real Spot coin held on Binance. Bot is waiting for target price. No instant market sell!
-                  </div>
+                        fontSize: '0.75rem',
+                        fontWeight: 800,
+                        cursor: closingPosition ? 'not-allowed' : 'pointer'
+                      }}
+                    >
+                      {closingPosition && !closingSymbol ? 'Selling All...' : 'Close All Positions'}
+                    </button>
+                  )}
                 </div>
 
-                <div style={{display: 'flex', gap: '1.5rem', alignItems: 'center', flexWrap: 'wrap'}}>
-                  <div>
-                    <div style={{fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700}}>Entry Price</div>
-                    <div style={{fontWeight: 800, fontSize: '1.05rem', color: '#fff'}}>
-                      ${activePositionData.entry_price}
-                    </div>
-                  </div>
-                  <div>
-                    <div style={{fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700}}>Live Price</div>
-                    <div style={{fontWeight: 900, fontSize: '1.05rem', color: '#38bdf8'}}>
-                      ${activePositionData.current_price || activePositionData.entry_price}
-                    </div>
-                  </div>
-                  <div>
-                    <div style={{fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700}}>Take Profit (+{(activePositionData.tp_pct * 100).toFixed(1)}%)</div>
-                    <div style={{fontWeight: 900, fontSize: '1.05rem', color: '#10b981'}}>
-                      ${activePositionData.target_price}
-                    </div>
-                  </div>
-                  <div>
-                    <div style={{fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700}}>Stop Loss</div>
-                    <div style={{fontWeight: 900, fontSize: '1.05rem', color: '#f43f5e'}}>
-                      ${activePositionData.stop_loss_price}
-                    </div>
-                  </div>
-                  <div>
-                    <div style={{fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700}}>Unrealized PnL</div>
-                    <div style={{
-                      fontWeight: 900,
-                      fontSize: '1.25rem',
-                      color: (activePositionData.unrealized_pnl_pct || 0) >= 0 ? '#10b981' : '#f43f5e'
-                    }}>
-                      {(activePositionData.unrealized_pnl_pct || 0) >= 0 ? '+' : ''}{(activePositionData.unrealized_pnl_pct || 0).toFixed(2)}%
-                      <span style={{fontSize: '0.8rem', marginLeft: '4px'}}>
-                        (${activePositionData.unrealized_pnl_usd >= 0 ? '+' : ''}{(activePositionData.unrealized_pnl_usd || 0).toFixed(4)})
-                      </span>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    disabled={closingPosition}
-                    onClick={handleClosePosition}
+                {activePositions.map((pos, idx) => (
+                  <div 
+                    key={pos.symbol || idx}
                     style={{
-                      background: 'rgba(244, 63, 94, 0.2)',
-                      border: '1px solid #f43f5e',
-                      color: '#f43f5e',
-                      padding: '8px 14px',
-                      borderRadius: '8px',
-                      fontSize: '0.8rem',
-                      fontWeight: 800,
-                      cursor: closingPosition ? 'not-allowed' : 'pointer'
+                      background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.16), rgba(6, 78, 59, 0.4))',
+                      border: '1px solid #10b981',
+                      borderRadius: '12px',
+                      padding: '1.1rem 1.3rem',
+                      boxShadow: '0 0 25px rgba(16, 185, 129, 0.2)',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      flexWrap: 'wrap',
+                      gap: '1.2rem'
                     }}
                   >
-                    {closingPosition ? 'Selling...' : 'Market Exit'}
-                  </button>
-                </div>
+                    <div style={{flex: 1, minWidth: '240px'}}>
+                      <div style={{display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px', flexWrap: 'wrap'}}>
+                        <span style={{
+                          background: '#10b981',
+                          color: '#000',
+                          padding: '2px 6px',
+                          borderRadius: '4px',
+                          fontWeight: 900,
+                          fontSize: '0.72rem'
+                        }}>
+                          SLOT {idx + 1}
+                        </span>
+                        <span style={{fontWeight: 900, fontSize: '1.15rem', color: '#fff'}}>
+                          <span style={{color: '#38bdf8'}}>{pos.symbol}</span>
+                        </span>
+                        <span style={{
+                          background: 'rgba(16, 185, 129, 0.3)',
+                          color: '#10b981',
+                          border: '1px solid #10b981',
+                          padding: '2px 8px',
+                          borderRadius: '6px',
+                          fontSize: '0.72rem',
+                          fontWeight: 900
+                        }}>
+                          TP (+{((pos.tp_pct || 0.018) * 100).toFixed(1)}%)
+                        </span>
+                        {pos.trailing_stop_active && (
+                          <span style={{
+                            background: 'rgba(56, 189, 248, 0.25)',
+                            color: '#38bdf8',
+                            border: '1px solid #38bdf8',
+                            padding: '2px 8px',
+                            borderRadius: '6px',
+                            fontSize: '0.72rem',
+                            fontWeight: 900
+                          }}>
+                            🛡️ TRAILING SL ACTIVE
+                          </span>
+                        )}
+                      </div>
+                      <div style={{fontSize: '0.78rem', color: 'var(--text-muted)'}}>
+                        Binance Spot | Trailing stop moves UP synchronously with profits. Peak: ${typeof pos.highest_price === 'number' ? pos.highest_price.toFixed(8).replace(/\.?0+$/, '') : pos.highest_price}
+                      </div>
+                    </div>
+
+                    <div style={{display: 'flex', gap: '1.2rem', alignItems: 'center', flexWrap: 'wrap'}}>
+                      <div>
+                        <div style={{fontSize: '0.68rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700}}>Entry</div>
+                        <div style={{fontWeight: 800, fontSize: '1rem', color: '#fff'}}>
+                          ${typeof pos.entry_price === 'number' ? pos.entry_price.toFixed(8).replace(/\.?0+$/, '') : pos.entry_price}
+                        </div>
+                      </div>
+                      <div>
+                        <div style={{fontSize: '0.68rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700}}>Live Price</div>
+                        <div style={{fontWeight: 900, fontSize: '1rem', color: '#38bdf8'}}>
+                          ${typeof (pos.current_price || pos.entry_price) === 'number' ? (pos.current_price || pos.entry_price).toFixed(8).replace(/\.?0+$/, '') : (pos.current_price || pos.entry_price)}
+                        </div>
+                      </div>
+                      <div>
+                        <div style={{fontSize: '0.68rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700}}>Take Profit</div>
+                        <div style={{fontWeight: 900, fontSize: '1rem', color: '#10b981'}}>
+                          ${typeof pos.target_price === 'number' ? pos.target_price.toFixed(8).replace(/\.?0+$/, '') : pos.target_price}
+                        </div>
+                      </div>
+                      <div>
+                        <div style={{fontSize: '0.68rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700}}>Dynamic SL</div>
+                        <div style={{fontWeight: 900, fontSize: '1rem', color: '#f43f5e'}}>
+                          ${typeof pos.stop_loss_price === 'number' ? pos.stop_loss_price.toFixed(8).replace(/\.?0+$/, '') : pos.stop_loss_price}
+                        </div>
+                      </div>
+                      <div>
+                        <div style={{fontSize: '0.68rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700}}>Unrealized PnL</div>
+                        <div style={{
+                          fontWeight: 900,
+                          fontSize: '1.15rem',
+                          color: (pos.unrealized_pnl_pct || 0) >= 0 ? '#10b981' : '#f43f5e'
+                        }}>
+                          {(pos.unrealized_pnl_pct || 0) >= 0 ? '+' : ''}{(pos.unrealized_pnl_pct || 0).toFixed(2)}%
+                          <span style={{fontSize: '0.75rem', marginLeft: '4px'}}>
+                            (${pos.unrealized_pnl_usd >= 0 ? '+' : ''}{(pos.unrealized_pnl_usd || 0).toFixed(4)})
+                          </span>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        disabled={closingPosition && closingSymbol === pos.symbol}
+                        onClick={() => handleClosePosition(pos.symbol)}
+                        style={{
+                          background: 'rgba(244, 63, 94, 0.2)',
+                          border: '1px solid #f43f5e',
+                          color: '#f43f5e',
+                          padding: '7px 12px',
+                          borderRadius: '8px',
+                          fontSize: '0.78rem',
+                          fontWeight: 800,
+                          cursor: (closingPosition && closingSymbol === pos.symbol) ? 'not-allowed' : 'pointer'
+                        }}
+                      >
+                        {(closingPosition && closingSymbol === pos.symbol) ? 'Selling...' : 'Market Exit'}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+
+                {activePositions.length < 3 && realWalletPnlData?.real_trading_active && (
+                  <div style={{
+                    background: 'rgba(16, 185, 129, 0.06)',
+                    border: '1px dashed rgba(16, 185, 129, 0.3)',
+                    borderRadius: '10px',
+                    padding: '0.65rem 1.1rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                    fontSize: '0.8rem',
+                    color: '#10b981'
+                  }}>
+                    <span style={{fontSize: '1rem'}}>🔍</span>
+                    <span>
+                      <strong>Slot {activePositions.length + 1} of 3 Available:</strong> Scanning DOGE, PEPE, SHIB, BONK, WIF for 70%+ momentum entry (Min $1.08 spot notional)...
+                    </span>
+                  </div>
+                )}
               </div>
             ) : realWalletPnlData?.real_trading_active ? (
               <div style={{
@@ -2983,7 +3070,7 @@ function App() {
               }}>
                 <span style={{fontSize: '1.1rem'}}>🔍</span>
                 <span>
-                  <strong>Real Spot Engine Active:</strong> Scanning Binance for 72%+ ML confluence oversold entry (DOGE, PEPE, SHIB, BONK, WIF)... Holding capital 100% safe in USDT.
+                  <strong>Multi-Slot Real Spot Engine Active (0/3 Slots Deployed):</strong> Scanning Binance for 70%+ ML confluence oversold entry (DOGE, PEPE, SHIB, BONK, WIF)... Up to 3 concurrent trades with synchronous trailing stops!
                 </span>
               </div>
             ) : null}

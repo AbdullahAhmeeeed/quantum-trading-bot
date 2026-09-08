@@ -189,9 +189,21 @@ class BinanceExchangeConnector:
                     # Automatically fetch free balance of base coin (e.g. PEPE, DOGE) to sell
                     base_currency = symbol.split('/')[0]
                     bal = self.exchange.fetch_balance({'type': 'spot'})
-                    free_coin = bal.get(base_currency, {}).get('free', 0.0)
+                    val = bal.get(base_currency)
+                    if isinstance(val, dict):
+                        free_coin = float(val.get('free', 0.0) or 0.0)
+                    elif isinstance(val, (int, float)):
+                        free_coin = float(val)
+                    else:
+                        free_coin = float(bal.get('free', {}).get(base_currency, 0.0) or 0.0)
+
                     if free_coin <= 0:
                         return {'success': False, 'error': f'No free {base_currency} balance available to sell'}
+
+                    # Pre-check notional value to prevent raw Binance -1013 filter errors
+                    if (free_coin * price) < 1.0:
+                        return {'success': False, 'error': f'Filter failure: NOTIONAL (balance {free_coin} {base_currency} = ${free_coin * price:.3f} USD < $1.00 min notional)'}
+
                     qty_str = self.exchange.amount_to_precision(symbol, free_coin)
                     quantity = float(qty_str)
             else:

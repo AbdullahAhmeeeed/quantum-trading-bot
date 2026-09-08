@@ -381,67 +381,118 @@ def get_real_allocated_capital() -> float:
     return real_allocated_capital
 
 
-# ─── Stateful Real Spot Position Engine ──────────────────────────────────────
-active_real_position: Optional[dict] = None
+# ─── Multi-Slot Stateful Real Spot Position Engine ───────────────────────────
+MAX_CONCURRENT_REAL_POSITIONS = 3
+active_real_positions: Dict[str, dict] = {}  # symbol -> position dict
 
 
-def get_active_real_position() -> Optional[dict]:
+def get_active_real_positions() -> List[dict]:
+    """Returns list of all active real positions."""
     with swarm_lock:
-        if active_real_position:
-            return dict(active_real_position)
-        return None
+        return [dict(p) for p in active_real_positions.values()]
 
 
-def set_active_real_position(pos: dict) -> dict:
-    global active_real_position
+def get_real_position(symbol: str) -> Optional[dict]:
+    """Get position details for a specific symbol."""
     with swarm_lock:
-        active_real_position = dict(pos)
-        # Also update active bot state so thoughts and active_pair reflect holding
+        pos = active_real_positions.get(symbol)
+        return dict(pos) if pos else None
+
+
+def can_open_new_position() -> bool:
+    """Returns True if there is an available slot for a new real position."""
+    with swarm_lock:
+        return len(active_real_positions) < MAX_CONCURRENT_REAL_POSITIONS
+
+
+def add_real_position(pos: dict) -> dict:
+    """Adds a new real position into the multi-slot manager."""
+    global active_real_positions
+    sym = pos.get("symbol")
+    with swarm_lock:
+        active_real_positions[sym] = dict(pos)
+        # Update thought on primary active bot
         active = [b for b in swarm_bots.values() if b["status"] == STATUS_ACTIVE]
         if active:
-            active[0]["active_pair"] = pos.get("symbol")
-            active[0]["thought"] = f"🟢 POSITION OPEN: {pos.get('symbol')} @ ${pos.get('entry_price', 0):.4f} | Target: ${pos.get('target_price', 0):.4f} (+{pos.get('tp_pct', 0.03)*100:.1f}%)"
-        return active_real_position
+            active[0]["thought"] = f"🟢 SLOT ACTIVE ({len(active_real_positions)}/{MAX_CONCURRENT_REAL_POSITIONS}): {sym} @ ${pos.get('entry_price'):.6f} | Target: +{pos.get('tp_pct', 0.015)*100:.1f}%"
+        return dict(pos)
 
 
-def update_real_position_price(current_price: float) -> Optional[dict]:
-    """Updates the position's live price, unrealized PnL, and adjusts trailing stop."""
-    global active_real_position
+def update_real_position_price(symbol: str, current_price: float) -> Optional[dict]:
+    """
+    Updates the position's live price, unrealized PnL, and adjusts:
+    1. Trailing Stop: Moves UP synchronously as price advances (0.8% trailing gap).
+       Once in +0.8% profit, stop moves above entry (breakeven locked!).
+    2. Trailing Take-Profit: Extends UP proportionally to capture explosive surges.
+    """
+    global active_real_positions
     with swarm_lock:
-        if not active_real_position or current_price <= 0:
+        if symbol not in active_real_positions or current_price <= 0:
             return None
-        
-        pos = active_real_position
+
+        pos = active_real_positions[symbol]
         entry = float(pos.get("entry_price", 0.0))
         if entry <= 0:
-            return pos
-        
+            return dict(pos)
+
         pos["current_price"] = current_price
         pnl_pct = ((current_price - entry) / entry) * 100.0
         pos["unrealized_pnl_pct"] = round(pnl_pct, 2)
         pos["unrealized_pnl_usd"] = round((pos.get("cost_usd", 0.0) * (pnl_pct / 100.0)), 4)
-        
-        # Track highest price seen
+
+        # Track highest price seen since entry
         highest = max(pos.get("highest_price", entry), current_price)
         pos["highest_price"] = highest
-        
-        # Trailing Stop: If price moves up +1.5%, move stop-loss to Breakeven (+0.4% above entry)
-        if pnl_pct >= 1.5:
-            breakeven_sl = round(entry * 1.004, 6)
-            if breakeven_sl > pos.get("stop_loss_price", 0.0):
-                pos["stop_loss_price"] = breakeven_sl
-                pos["trailing_stop_active"] = True
+
+        # DYNAMIC SYNCHRONOUS TRAILING ENGINE:
+        # Trailing distance = 0.8% from peak
+        trailing_dist_pct = float(pos.get("trailing_dist_pct", 0.008))
+        dynamic_sl = highest * (1.0 - trailing_dist_pct)
+
+        # Ensure Stop-Loss only ratchets UP, never decreases
+        current_sl = float(pos.get("stop_loss_price", entry * 0.988))
+        if dynamic_sl > current_sl:
+            pos["stop_loss_price"] = dynamic_sl
+            pos["trailing_stop_active"] = True
+
+        # Trailing Take-Profit: Extends higher so price can run
+        current_tp = float(pos.get("target_price", entry * 1.015))
+        tp_target = highest * (1.0 + float(pos.get("tp_pct", 0.015)))
+        if tp_target > current_tp:
+            pos["target_price"] = tp_target
 
         return dict(pos)
 
 
-def clear_active_real_position() -> None:
-    global active_real_position
+def remove_real_position(symbol: str) -> Optional[dict]:
+    """Removes a position after Take-Profit, Stop-Loss, or manual close."""
+    global active_real_positions
     with swarm_lock:
-        active_real_position = None
-        active = [b for b in swarm_bots.values() if b["status"] == STATUS_ACTIVE]
-        if active:
-            active[0]["active_pair"] = None
+        removed = active_real_positions.pop(symbol, None)
+        return removed
+
+
+def clear_all_real_positions() -> None:
+    """Emergency reset: clears all slots."""
+    global active_real_positions
+    with swarm_lock:
+        active_real_positions.clear()
+
+
+# Backward compatibility helpers
+def get_active_real_position() -> Optional[dict]:
+    with swarm_lock:
+        if active_real_positions:
+            return dict(next(iter(active_real_positions.values())))
+        return None
+
+
+def set_active_real_position(pos: dict) -> dict:
+    return add_real_position(pos)
+
+
+def clear_active_real_position() -> None:
+    clear_all_real_positions()
 
 
 
