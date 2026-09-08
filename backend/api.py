@@ -18,6 +18,7 @@ import numpy as np
 from pydantic import BaseModel
 import bot_manager as bm
 from trade_memory import trade_memory as tmem
+from chart_reader import chart_reader
 from opportunity_scanner import scan_opportunities, get_cached_opportunities, get_best_opportunity, DEFAULT_PRICES, TRADING_UNIVERSE
 from datetime import datetime, timezone
 from typing import Optional, List, Dict
@@ -1708,18 +1709,74 @@ async def swarm_trading_loop():
                     pnl_pct = updated_pos.get("unrealized_pnl_pct", 0.0)
                     pnl_usd = updated_pos.get("unrealized_pnl_usd", 0.0)
 
-                    # Stagnation check: If held > 25 minutes with near-zero movement (|pnl| < 0.5%), exit to free slot
-                    is_stagnant = False
-                    opened_at_str = updated_pos.get("opened_at")
-                    if opened_at_str:
+                    # ─── DUAL-EXIT LOGIC: QUICK-PROFIT LOCK VS SUPER-RUNNER ──────
+                    # A. Super-Conviction Runner Escalation (+0.5% profit with surging breakout)
+                    if pnl_pct >= 0.50 and not updated_pos.get("runner_ratcheted"):
                         try:
-                            opened_time = datetime.fromisoformat(opened_at_str)
-                            if (now_utc - opened_time).total_seconds() > 1500 and abs(pnl_pct) < 0.5:
-                                is_stagnant = True
+                            s_inst = pair_streamers.get(sym) or DataStreamer(symbol=sym, timeframe="1m")
+                            pos_df = s_inst.fetch_historical_data(limit=30)
+                            c_res = chart_reader.analyze_chart(pos_df)
+                            if c_res.get('is_super_conviction') or updated_pos.get("is_runner"):
+                                # Ratchet Stop Loss to GUARANTEED PROFIT (+0.30% minimum lock)
+                                guaranteed_sl = entry_p * (1.0 + 0.003)
+                                if guaranteed_sl > stop_p:
+                                    updated_pos["stop_loss_price"] = guaranteed_sl
+                                    updated_pos["target_price"] = entry_p * 1.035 # Extend target to +3.5%
+                                    updated_pos["runner_ratcheted"] = True
+                                    stop_p = guaranteed_sl
+                                    target_p = updated_pos["target_price"]
+                                    runner_msg = f"🚀 SUPER-RUNNER ACTIVATED on {sym}! Stop-Loss locked at +0.3% GUARANTEED PROFIT. Target extended to +3.5%!"
+                                    with bm.swarm_lock:
+                                        if bot_id in bm.swarm_bots:
+                                            bm.swarm_bots[bot_id]["thought"] = runner_msg
+                                    for conn in list(active_connections):
+                                        try:
+                                            await conn.send_json({"log": runner_msg, "swarm_update": True})
+                                        except Exception:
+                                            pass
                         except Exception:
                             pass
 
-                    # A. TAKE PROFIT CHECK
+                    # B. Instant Quick-Profit Lock on Momentum Stall (+0.50% to +0.80%)
+                    # If in healthy scalp profit but NOT in runner breakout, lock profit if candle stalls!
+                    should_quick_lock = False
+                    stall_reason = ""
+                    if pnl_pct >= 0.50 and not updated_pos.get("runner_ratcheted"):
+                        try:
+                            s_inst = pair_streamers.get(sym) or DataStreamer(symbol=sym, timeframe="1m")
+                            pos_df = s_inst.fetch_historical_data(limit=25)
+                            is_stalled, stall_reason = chart_reader.check_momentum_stall(pos_df, entry_p, live_p)
+                            if is_stalled:
+                                should_quick_lock = True
+                        except Exception:
+                            pass
+
+                    if should_quick_lock:
+                        sell_res = exchange_connector.place_market_order(symbol=sym, side='SELL')
+                        if sell_res.get('success'):
+                            mem_id = active_real_pos.get("memory_trade_id")
+                            if mem_id:
+                                try:
+                                    tmem.record_exit(mem_id, live_p, "QUICK_PROFIT_LOCK",
+                                                     highest_price=updated_pos.get("highest_price"),
+                                                     lowest_price=updated_pos.get("lowest_price", entry_p))
+                                except Exception as mem_err:
+                                    print(f"[TradeMemory] Quick-lock record error: {mem_err}")
+                            bm.remove_real_position(sym)
+                            quick_msg = f"⚡ INSTANT QUICK-PROFIT LOCKED! Sold {sym} @ ${live_p:.8f} (+{pnl_pct:.2f}% | +${pnl_usd:.4f} USD) | {stall_reason}"
+                            with bm.swarm_lock:
+                                if bot_id in bm.swarm_bots:
+                                    bm.swarm_bots[bot_id]["thought"] = quick_msg
+                                    bm.swarm_bots[bot_id]["winning_trades"] += 1
+                                    bm.swarm_bots[bot_id]["daily_pnl"] += pnl_usd
+                            for conn in list(active_connections):
+                                try:
+                                    await conn.send_json({"log": quick_msg, "swarm_update": True})
+                                except Exception:
+                                    pass
+                            continue
+
+                    # C. Standard Take Profit Hit
                     if live_p >= target_p:
                         sell_res = exchange_connector.place_market_order(symbol=sym, side='SELL')
                         if sell_res.get('success'):
@@ -1746,7 +1803,7 @@ async def swarm_trading_loop():
                                     pass
                             continue
 
-                    # B. TRAILING STOP OR STOP LOSS CHECK
+                    # D. Trailing Stop or Stop Loss Hit
                     elif live_p <= stop_p:
                         sell_res = exchange_connector.place_market_order(symbol=sym, side='SELL')
                         if sell_res.get('success'):
@@ -1790,8 +1847,18 @@ async def swarm_trading_loop():
                                         pass
                             continue
 
-                    # C. STAGNATION TIMEOUT ROTATION
-                    elif is_stagnant:
+                    # E. Stagnation check: Reduced from 25m to 15m to prevent dead capital
+                    is_stagnant = False
+                    opened_at_str = updated_pos.get("opened_at")
+                    if opened_at_str:
+                        try:
+                            opened_time = datetime.fromisoformat(opened_at_str)
+                            if (now_utc - opened_time).total_seconds() > 900 and abs(pnl_pct) < 0.35:
+                                is_stagnant = True
+                        except Exception:
+                            pass
+
+                    if is_stagnant:
                         sell_res = exchange_connector.place_market_order(symbol=sym, side='SELL')
                         if sell_res.get('success'):
                             # Record exit in self-learning trade memory
@@ -1863,6 +1930,12 @@ async def swarm_trading_loop():
                                     try:
                                         s_inst = pair_streamers.get(cp) or DataStreamer(symbol=cp, timeframe="1m")
                                         df = s_inst.fetch_historical_data(limit=60)
+                                        
+                                        # ─── DEEP MULTI-CONFLUENCE CHART READING ───────────
+                                        chart_analysis = chart_reader.analyze_chart(df)
+                                        if chart_analysis.get('signal') != 'BUY' or chart_analysis.get('confluence_score', 0) < 4:
+                                            continue  # Reject pair if chart does not have at least 4/5 confirmations!
+
                                         ml_sig, ml_cf = strategy.generate_signals(df)
                                         
                                         if ml_sig == "BUY" and ml_cf >= 0.70:
@@ -1892,14 +1965,14 @@ async def swarm_trading_loop():
                                             # Blend confidence with self-learned outcome model
                                             blended_cf = tmem.get_blended_confidence(ml_cf, entry_features)
                                             
-                                            best_real_opp = (cp, cp_price, blended_cf)
+                                            best_real_opp = (cp, cp_price, blended_cf, chart_analysis)
                                             best_features = entry_features
                                             break
                                     except Exception:
                                         continue
 
                                 if best_real_opp and best_features:
-                                    r_pair, r_price, r_conf = best_real_opp
+                                    r_pair, r_price, r_conf, r_chart = best_real_opp
                                     buy_res = exchange_connector.place_market_order(
                                         symbol=r_pair,
                                         side='BUY',
@@ -1922,6 +1995,8 @@ async def swarm_trading_loop():
                                         except Exception as mem_err:
                                             print(f"[TradeMemory] Entry record error: {mem_err}")
                                         
+                                        is_runner = bool(r_chart.get('is_super_conviction', False))
+                                        c_score = int(r_chart.get('confluence_score', 4))
                                         new_pos = {
                                             "symbol": r_pair,
                                             "entry_price": fill_p,
@@ -1936,15 +2011,18 @@ async def swarm_trading_loop():
                                             "opened_at": datetime.now(timezone.utc).isoformat(),
                                             "trailing_stop_active": False,
                                             "status": "HOLDING",
-                                            "memory_trade_id": mem_trade_id
+                                            "memory_trade_id": mem_trade_id,
+                                            "is_runner": is_runner,
+                                            "confluence_score": c_score
                                         }
                                         bm.add_real_position(new_pos)
                                         tp_display = round(learned_tp * 100, 1)
                                         sl_display = round(learned_sl * 100, 1)
+                                        type_tag = "🚀 SUPER-CONVICTION RUNNER" if is_runner else f"🎯 SNIPER BUY ({c_score}/5 Confirmations)"
                                         entry_log = (
-                                            f"🚀 REAL SPOT BUY [{len(bm.get_active_real_positions())}/{bm.MAX_CONCURRENT_REAL_POSITIONS}]: "
+                                            f"{type_tag} [{len(bm.get_active_real_positions())}/{bm.MAX_CONCURRENT_REAL_POSITIONS}]: "
                                             f"{r_pair} @ ${fill_p:.8f} (${trade_size_usd} USDT deployed). "
-                                            f"Target: ${target_price:.8f} (+{tp_display}%) | Trailing SL: ${stop_price:.8f} (-{sl_display}%) "
+                                            f"Target: ${target_price:.8f} (+{tp_display}%) | SL: ${stop_price:.8f} (-{sl_display}%) "
                                             f"[🧠 Self-Learn: Trade #{mem_trade_id}]"
                                         )
                                         for conn in list(active_connections):

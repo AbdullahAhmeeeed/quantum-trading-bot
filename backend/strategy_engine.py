@@ -15,6 +15,7 @@ from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.linear_model import SGDClassifier
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import accuracy_score, f1_score
+from chart_reader import chart_reader
 
 try:
     import pandas_ta as ta
@@ -270,13 +271,17 @@ class QuantStrategyEngine:
             dist_ema = latest['dist_ema_50_pct']
             rsi = latest['rsi_14']
 
-            # Fallback to quant indicator convergence if ML not initialized
+            # Analyze chart patterns, volume surges, EMA alignment, and MACD expansion
+            chart_res = chart_reader.analyze_chart(df)
+            chart_sig = chart_res.get('signal', 'HOLD')
+            chart_conf = chart_res.get('confidence', 0.40)
+            confluence_score = chart_res.get('confluence_score', 0)
+
+            # Fallback to pure technical chart reading if ML model is not loaded
             if not self.is_trained or self.model is None or not self.features_list:
-                if price > ema50 and rsi > 52:
-                    return "BUY", 0.72
-                elif price < ema50 and rsi < 48:
-                    return "SELL", 0.72
-                return "HOLD", 0.50
+                if chart_sig == "BUY" and confluence_score >= 4:
+                    return "BUY", chart_conf
+                return "HOLD", 0.40
 
             X_curr = feat_df[self.features_list].iloc[[-1]].values
             X_sc = self.scaler.transform(X_curr)
@@ -285,23 +290,27 @@ class QuantStrategyEngine:
             p_down, p_up = float(probs[0]), float(probs[1])
             margin = abs(p_up - p_down)
 
-            # Confidence Check with Micro-Trend Fallback
-            if margin >= 0.10:
-                if p_up > p_down:
-                    if dist_ema >= -1.5:
-                        return "BUY", round(max(p_up, 0.75), 4)
-                else:
-                    if dist_ema <= 1.5:
-                        return "SELL", round(max(p_down, 0.75), 4)
+            # 1. Super-Conviction Breakout: ChartReader 5/5 score + volume surge
+            if chart_res.get('is_super_conviction'):
+                return "BUY", 0.92
 
-            # Quant Microstructure Momentum Fallback (active trading)
-            if rsi >= 50 and dist_ema >= -0.5:
-                return "BUY", 0.76
-            elif rsi < 50 and dist_ema < 0.5:
-                return "SELL", 0.76
+            # 2. Strong Dual Confluence: Both ML model AND ChartReader confirm BUY
+            if margin >= 0.12 and p_up > p_down:
+                if chart_sig == "BUY" and confluence_score >= 4:
+                    blended_conf = round(p_up * 0.45 + chart_conf * 0.55, 4)
+                    return "BUY", max(blended_conf, 0.80)
 
-            return "BUY" if price >= ema50 else "SELL", 0.72
+            # 3. High-Probability Chart Setup: ChartReader has 4/5 confirmations & ML is not bearish
+            if chart_sig == "BUY" and confluence_score >= 4 and p_down < 0.60:
+                return "BUY", chart_conf
+
+            # 4. Bearish Momentum: Downward trend or sell signal
+            if (p_down > p_up and margin >= 0.15) or (price < ema50 and dist_ema <= -1.5):
+                return "SELL", round(max(p_down, 0.75), 4)
+
+            # 5. Default: PATIENCE — HOLD capital safely! (No blind trades)
+            return "HOLD", 0.45
 
         except Exception as e:
             print(f"[QuantEngine] Signal generation error: {e}")
-            return "BUY", 0.70
+            return "HOLD", 0.40
