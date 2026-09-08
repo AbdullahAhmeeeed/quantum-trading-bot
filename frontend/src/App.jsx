@@ -3123,6 +3123,21 @@ function App() {
                     fontWeight: 700,
                     padding: '3px 10px',
                     borderRadius: '20px',
+                    background: 'rgba(239, 68, 68, 0.15)',
+                    border: '1px solid rgba(239, 68, 68, 0.4)',
+                    color: '#f87171'
+                  }}>
+                    <span style={{width: 6, height: 6, borderRadius: '50%', background: '#ef4444', display: 'inline-block'}} />
+                    Verified Binance Real Money Journal
+                  </span>
+                  <span style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    fontSize: '0.72rem',
+                    fontWeight: 700,
+                    padding: '3px 10px',
+                    borderRadius: '20px',
                     background: 'rgba(16, 185, 129, 0.15)',
                     border: '1px solid rgba(16, 185, 129, 0.4)',
                     color: '#34d399'
@@ -3151,27 +3166,43 @@ function App() {
                 marginBottom: '1rem'
               }}>
                 <div style={{background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '8px', padding: '0.7rem'}}>
-                  <div style={{fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '3px'}}>Trade Memory</div>
+                  <div style={{fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '3px'}}>Real Trade Memory</div>
                   <div style={{fontSize: '1.2rem', fontWeight: 800, color: '#f8fafc'}}>
                     {selfLearningData?.total_trades || 0}
                     <span style={{fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 400, marginLeft: '4px'}}>
-                      ({selfLearningData?.open_trades || 0} active)
+                      Completed
                     </span>
                   </div>
-                  <div style={{fontSize: '0.68rem', color: '#94a3b8', marginTop: '2px'}}>Recorded in Journal</div>
+                  {selfLearningData?.open_trades > 0 ? (
+                    <div style={{fontSize: '0.72rem', color: '#34d399', fontWeight: 700, marginTop: '2px', display: 'flex', alignItems: 'center', gap: '4px'}}>
+                      <span style={{width: 6, height: 6, borderRadius: '50%', background: '#10b981', display: 'inline-block'}} />
+                      {selfLearningData.open_trades} Live Trade Active
+                    </div>
+                  ) : (
+                    <div style={{fontSize: '0.68rem', color: '#94a3b8', marginTop: '2px'}}>0 Active Holdings</div>
+                  )}
                 </div>
 
                 <div style={{background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '8px', padding: '0.7rem'}}>
-                  <div style={{fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '3px'}}>Win Rate</div>
+                  <div style={{fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '3px'}}>Real Win Rate</div>
                   <div style={{
                     fontSize: '1.2rem',
                     fontWeight: 800,
-                    color: (selfLearningData?.overall_win_rate || 0) >= 50 ? '#34d399' : '#f87171'
+                    color: (selfLearningData?.total_trades || 0) === 0 ? '#38bdf8' :
+                           (selfLearningData?.overall_win_rate || 0) >= 50 ? '#34d399' : '#f87171'
                   }}>
-                    {Number(selfLearningData?.overall_win_rate || 0).toFixed(1)}%
+                    {(selfLearningData?.total_trades || 0) === 0 ? (
+                      selfLearningData?.open_trades > 0 ? 'Holding #1' : '0.0%'
+                    ) : (
+                      `${Number(selfLearningData?.overall_win_rate || 0).toFixed(1)}%`
+                    )}
                   </div>
                   <div style={{fontSize: '0.68rem', color: '#94a3b8', marginTop: '2px'}}>
-                    {selfLearningData?.total_wins || 0} Wins / {selfLearningData?.total_losses || 0} Losses
+                    {(selfLearningData?.total_trades || 0) === 0 ? (
+                      selfLearningData?.open_trades > 0 ? 'Trailing Stop Active' : 'Awaiting 1st Closed Trade'
+                    ) : (
+                      `${selfLearningData?.total_wins || 0} Wins / ${selfLearningData?.total_losses || 0} Losses`
+                    )}
                   </div>
                 </div>
 
