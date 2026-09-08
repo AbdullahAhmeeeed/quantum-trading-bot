@@ -1843,8 +1843,10 @@ async def swarm_trading_loop():
                         # Minimum capital required to safely open a Binance Spot position above $1.00 notional
                         if free_usdt >= 1.08:
                             slots_available = max(1, bm.MAX_CONCURRENT_REAL_POSITIONS - len(current_symbols))
-                            # Allocate safely between $1.08 and $1.15 per slot
-                            trade_size_usd = round(min(1.15, max(1.08, free_usdt / slots_available)), 2)
+                            # Dynamic allocation: scales smoothly with deposited budget across slots (minimum $1.08 per slot)
+                            max_cap = float(getattr(exchange_connector, 'max_trade_cap_usd', 10.0) or 10.0)
+                            target_slot_size = free_usdt / slots_available
+                            trade_size_usd = round(min(max_cap, max(1.08, target_slot_size)), 2)
                             if trade_size_usd > free_usdt:
                                 trade_size_usd = round(free_usdt - 0.01, 2)
                                 
