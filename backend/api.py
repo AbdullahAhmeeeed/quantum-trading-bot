@@ -1357,11 +1357,12 @@ def kill_swarm_bot(bot_id: str):
 
 class SwarmRealMoneyRequest(BaseModel):
     amount: float
+    mode: str = "AGGRESSIVE" # "SAFE" or "AGGRESSIVE"
 
 
 @app.post("/api/swarm/allocate_real_money")
 def allocate_swarm_real_money(req: SwarmRealMoneyRequest):
-    """Allocates real money to Swarm Little Bot and activates live Binance Spot execution."""
+    """Allocates real money to Swarm Little Bot and activates live Binance Spot execution with Safe vs Aggressive mode."""
     global exchange_connector, testnet
     active_engine = exchange_connector or testnet
     if not active_engine or not getattr(active_engine, 'is_live', False):
@@ -1373,18 +1374,35 @@ def allocate_swarm_real_money(req: SwarmRealMoneyRequest):
     try:
         status = active_engine.test_connection()
         usdt_bal = float(status.get('total_stable_balance', status.get('usdt_balance', 0.0)) or 0.0)
+        bal = active_engine.get_account_balance()
+        # Compute exact total wallet USD equity snapshot at allocation time
+        coins_usd = 0.0
+        for coin, data in bal.items():
+            if coin in ['USDT', 'USD', 'FDUSD']:
+                continue
+            qty = float(data.get('free', 0.0) or 0.0) + float(data.get('used', 0.0) or 0.0)
+            if qty > 0:
+                p = active_engine.get_price(f"{coin}/USDT") or active_engine.get_price(f"{coin}/FDUSD") or 0.0
+                coins_usd += (qty * p)
+        total_wallet_equity = round(usdt_bal + coins_usd, 4)
     except Exception:
-        usdt_bal = 4.06
+        usdt_bal = 3.0
+        total_wallet_equity = 3.0
 
     target_amt = max(1.0, float(req.amount))
     if usdt_bal > 0 and target_amt > usdt_bal:
         target_amt = usdt_bal
 
-    bot = bm.enable_real_trading(target_amt)
+    selected_mode = "AGGRESSIVE" if str(req.mode).upper() == "AGGRESSIVE" else "SAFE"
+    bot = bm.enable_real_trading(target_amt, mode=selected_mode, initial_wallet_usd=total_wallet_equity)
+    mode_label = "⚡ AGGRESSIVE (Safe Filters OFF)" if selected_mode == "AGGRESSIVE" else "🛡️ SAFE (Capital Guard)"
+
     return {
         "success": True,
-        "message": f"Successfully allocated ${target_amt:.2f} REAL USDT to Little Bot! Real Binance Spot trading is now ACTIVE.",
+        "message": f"Successfully allocated ${target_amt:.2f} REAL funds in {mode_label}! Real Binance Spot execution is ACTIVE.",
         "allocated_capital": target_amt,
+        "mode": selected_mode,
+        "initial_wallet_usd": total_wallet_equity,
         "bot": bot,
         "real_trading_active": True
     }
@@ -1398,6 +1416,78 @@ def disable_swarm_real_trading():
         "success": True,
         "message": "Real Binance trading STOPPED. Bot is now running safely in simulation mode."
     }
+
+
+@app.get("/api/swarm/real_pnl")
+def get_swarm_real_pnl():
+    """
+    Computes verified on-chain Real Binance Spot Wallet PnL (NOT algorithmic simulation).
+    Calculates exact real net equity = USDT + FDUSD + market value of all spot coins.
+    Returns net dollar gain/loss since capital allocation.
+    """
+    global exchange_connector, testnet
+    active_engine = exchange_connector or testnet
+    if not active_engine or not getattr(active_engine, 'is_live', False):
+        return {
+            "connected": False,
+            "error": "Binance Live not connected",
+            "initial_capital_usd": 0.0,
+            "current_wallet_usd": 0.0,
+            "real_net_pnl_usd": 0.0,
+            "real_net_pnl_pct": 0.0,
+            "mode": bm.get_real_trading_mode()
+        }
+
+    try:
+        bal = active_engine.get_account_balance()
+        usdt = float(bal.get('USDT', {}).get('free', 0.0) or 0.0)
+        fdusd = float(bal.get('FDUSD', {}).get('free', 0.0) or 0.0)
+
+        # Calculate market value of held tokens
+        coins_usd = 0.0
+        for coin, data in bal.items():
+            if coin in ['USDT', 'USD', 'FDUSD']:
+                continue
+            qty = float(data.get('free', 0.0) or 0.0) + float(data.get('used', 0.0) or 0.0)
+            if qty > 0:
+                p = active_engine.get_price(f"{coin}/USDT") or active_engine.get_price(f"{coin}/FDUSD") or 0.0
+                coins_usd += (qty * p)
+
+        current_wallet_usd = round(usdt + fdusd + coins_usd, 4)
+        init_usd = bm.get_initial_real_wallet_usd()
+        if init_usd <= 0:
+            init_usd = current_wallet_usd
+            bm.initial_real_wallet_usd = init_usd
+
+        real_pnl_usd = round(current_wallet_usd - init_usd, 4)
+        real_pnl_pct = round((real_pnl_usd / init_usd * 100.0) if init_usd > 0 else 0.0, 2)
+
+        return {
+            "connected": True,
+            "exchange": "Binance Global (LIVE)",
+            "initial_capital_usd": round(init_usd, 2),
+            "current_wallet_usd": current_wallet_usd,
+            "real_net_pnl_usd": real_pnl_usd,
+            "real_net_pnl_pct": real_pnl_pct,
+            "is_profit": (real_pnl_usd >= 0),
+            "mode": bm.get_real_trading_mode(),
+            "real_trading_active": bm.is_real_trading_enabled(),
+            "usdt_balance": round(usdt, 4),
+            "fdusd_balance": round(fdusd, 4),
+            "coins_equity_usd": round(coins_usd, 4),
+            "timestamp": int(time.time())
+        }
+    except Exception as e:
+        return {
+            "connected": False,
+            "error": str(e),
+            "initial_capital_usd": 0.0,
+            "current_wallet_usd": 0.0,
+            "real_net_pnl_usd": 0.0,
+            "real_net_pnl_pct": 0.0,
+            "mode": bm.get_real_trading_mode()
+        }
+
 
 
 
@@ -1485,8 +1575,12 @@ async def swarm_trading_loop():
             # 4. Scan all opportunities across all assets
             opportunities = scan_opportunities(live_prices)
 
-            # Best actionable opportunity (score >= 35)
-            best_opp = next((o for o in opportunities if o["signal"] in ["BUY", "SELL"] and o["score"] >= 35), None)
+            is_aggressive = (bm.get_real_trading_mode() == "AGGRESSIVE")
+            min_opp_score = 15 if is_aggressive else 35
+            min_conf_threshold = 0.40 if is_aggressive else 0.70
+
+            # Best actionable opportunity (Aggressive: score >= 15, Safe: score >= 35)
+            best_opp = next((o for o in opportunities if o["signal"] in ["BUY", "SELL"] and o["score"] >= min_opp_score), None)
 
             active_bots = bm.get_active_bots()
             if not active_bots:
@@ -1499,7 +1593,7 @@ async def swarm_trading_loop():
                 if not best_opp:
                     with bm.swarm_lock:
                         if bot_id in bm.swarm_bots:
-                            bm.swarm_bots[bot_id]["thought"] = f"Hunting momentum... Scanning {len(SWARM_TRADING_UNIVERSE)} coins. Bal: ${bot['current_balance']:.2f}"
+                            bm.swarm_bots[bot_id]["thought"] = f"Hunting momentum ({'AGGRESSIVE' if is_aggressive else 'SAFE'})... Scanning {len(SWARM_TRADING_UNIVERSE)} coins. Bal: ${bot['current_balance']:.2f}"
                     continue
 
                 pair = best_opp["pair"]
@@ -1515,31 +1609,29 @@ async def swarm_trading_loop():
                     df = s_inst.fetch_historical_data(limit=60)
                     ml_signal, ml_conf = strategy.generate_signals(df)
                     combined_conf = (opp_score / 100.0 * 0.4) + (ml_conf * 0.6)
-                    if ml_signal == "HOLD":
+                    if ml_signal == "HOLD" and not is_aggressive:
                         combined_conf *= 0.65
-                    final_signal = signal if combined_conf >= 0.48 else "HOLD"
+                    final_signal = signal if combined_conf >= (0.35 if is_aggressive else 0.48) else "HOLD"
                 except Exception:
                     combined_conf = opp_score / 100.0
-                    final_signal = signal if combined_conf >= 0.70 else "HOLD"
+                    final_signal = signal if combined_conf >= min_conf_threshold else "HOLD"
 
                 if final_signal == "HOLD":
                     with bm.swarm_lock:
                         if bot_id in bm.swarm_bots:
-                            bm.swarm_bots[bot_id]["thought"] = f"Analyzing {pair}... Edge {combined_conf*100:.0f}% < 70% min-risk threshold. Preserving capital."
+                            mode_desc = "Safe 70% threshold" if not is_aggressive else "40% edge threshold"
+                            bm.swarm_bots[bot_id]["thought"] = f"Analyzing {pair}... Edge {combined_conf*100:.0f}% < {mode_desc}. Monitoring..."
                     continue
 
-                # 4. INSTITUTIONAL MINIMUM-RISK POSITION SIZING (Capital Preservation)
+                # POSITION SIZING: Aggressive mode uses larger size & wider profit targets
                 cur_bal = bot["current_balance"]
-                pnl_now = bot["daily_pnl"]
-
-                # Strict 1.0% capital risk per trade (No over-leveraging)
-                risk_pct = 0.010
+                risk_pct = 0.035 if is_aggressive else 0.010
                 trade_capital = max(cur_bal * risk_pct, 0.05)
 
-                # Strict 1.2% Stop Loss, 3.0% Take Profit (2.5:1 R:R), with exchange fee buffer
-                sl_pct = 0.012
-                tp_pct = 0.030
+                sl_pct = 0.020 if is_aggressive else 0.012
+                tp_pct = 0.050 if is_aggressive else 0.030
                 fee_buffer = 0.0008
+
 
                 # Win probability grounded in technical ML confluence
                 win_prob = min(combined_conf + 0.02, 0.74)

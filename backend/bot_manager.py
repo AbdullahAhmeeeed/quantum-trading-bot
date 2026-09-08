@@ -319,14 +319,22 @@ def set_primary_bot_capital(amount: float) -> dict:
             return create_primary_bot()
 
 
-def enable_real_trading(amount: float) -> dict:
-    """Activates Real Money Binance Spot execution for the primary Swarm bot."""
-    global real_trading_active, real_allocated_capital, STARTING_CAPITAL
+real_trading_mode = "AGGRESSIVE" # "SAFE" or "AGGRESSIVE"
+initial_real_wallet_usd = 0.0
+
+
+def enable_real_trading(amount: float, mode: str = "AGGRESSIVE", initial_wallet_usd: float = 0.0) -> dict:
+    """Activates Real Money Binance Spot execution for the primary Swarm bot with selected mode."""
+    global real_trading_active, real_allocated_capital, STARTING_CAPITAL, real_trading_mode, initial_real_wallet_usd
     with swarm_lock:
         cap = max(1.0, float(amount))
         real_trading_active = True
         real_allocated_capital = cap
+        real_trading_mode = "AGGRESSIVE" if str(mode).upper() == "AGGRESSIVE" else "SAFE"
+        initial_real_wallet_usd = float(initial_wallet_usd) if initial_wallet_usd > 0 else cap
         STARTING_CAPITAL = cap
+        
+        mode_tag = "⚡ AGGRESSIVE MODE (Filters OFF)" if real_trading_mode == "AGGRESSIVE" else "🛡️ SAFE MODE (Capital Guard)"
         active = [b for b in swarm_bots.values() if b["status"] == STATUS_ACTIVE]
         if active:
             bot = active[0]
@@ -334,14 +342,16 @@ def enable_real_trading(amount: float) -> dict:
             bot["current_balance"] = cap
             bot["daily_pnl"] = 0.0
             bot["is_real_money"] = True
-            bot["thought"] = f"🔴 REAL MONEY SPOT ACTIVE: ${cap:.2f} deployed on Binance. Hunting $1 min-notional micro movers."
+            bot["trading_mode"] = real_trading_mode
+            bot["thought"] = f"🔴 REAL SPOT ACTIVE ({mode_tag}): ${cap:.2f} deployed on Binance."
             return bot
         else:
             bot = create_primary_bot()
             bot["is_real_money"] = True
             bot["starting_capital"] = cap
             bot["current_balance"] = cap
-            bot["thought"] = f"🔴 REAL MONEY SPOT ACTIVE: ${cap:.2f} deployed on Binance."
+            bot["trading_mode"] = real_trading_mode
+            bot["thought"] = f"🔴 REAL SPOT ACTIVE ({mode_tag}): ${cap:.2f} deployed on Binance."
             return bot
 
 
@@ -359,6 +369,15 @@ def is_real_trading_enabled() -> bool:
     return real_trading_active
 
 
+def get_real_trading_mode() -> str:
+    return real_trading_mode
+
+
+def get_initial_real_wallet_usd() -> float:
+    return initial_real_wallet_usd
+
+
 def get_real_allocated_capital() -> float:
     return real_allocated_capital
+
 
