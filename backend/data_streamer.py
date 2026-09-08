@@ -21,7 +21,7 @@ class DataStreamer:
             "PAXG/USDT":  "GC=F",      # PAXG tracks gold; GC=F is Gold Futures
             "DOGE/USDT":  "DOGE-USD",
             "SHIB/USDT":  "SHIB-USD",
-            "PEPE/USDT":  "PEPE-USD",
+            "PEPE/USDT":  "PEPE24478-USD",
             "WIF/USDT":   "WIF-USD",
             "BONK/USDT":  "BONK-USD",
             "XRP/USDT":   "XRP-USD",
