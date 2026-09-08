@@ -80,6 +80,18 @@ class DataStreamer:
             except Exception as e:
                 print(f"Seconds candle error: {e}")
 
+        # For crypto pairs with Binance CCXT, fetch real exchange OHLCV first (exact volume and micro-movements)
+        if "/" in self.symbol and not self._is_forex() and not start_date:
+            try:
+                tf = self.timeframe if self.timeframe in ['1m', '5m', '15m', '1h', '4h', '1d'] else '1m'
+                raw_candles = self.exchange.fetch_ohlcv(self.symbol, tf, limit=max(limit, 60))
+                if raw_candles and len(raw_candles) >= 20:
+                    df = pd.DataFrame(raw_candles, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+                    df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+                    return df
+            except Exception:
+                pass
+
         # Multi-day and standard historical timeframes
         yf_symbol = self._to_yf_symbol(self.symbol)
         interval_map = {"1m": "1m", "5m": "5m", "15m": "15m", "1h": "1h", "4h": "1h", "1d": "1d"}
