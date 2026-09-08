@@ -381,3 +381,67 @@ def get_real_allocated_capital() -> float:
     return real_allocated_capital
 
 
+# ─── Stateful Real Spot Position Engine ──────────────────────────────────────
+active_real_position: Optional[dict] = None
+
+
+def get_active_real_position() -> Optional[dict]:
+    with swarm_lock:
+        if active_real_position:
+            return dict(active_real_position)
+        return None
+
+
+def set_active_real_position(pos: dict) -> dict:
+    global active_real_position
+    with swarm_lock:
+        active_real_position = dict(pos)
+        # Also update active bot state so thoughts and active_pair reflect holding
+        active = [b for b in swarm_bots.values() if b["status"] == STATUS_ACTIVE]
+        if active:
+            active[0]["active_pair"] = pos.get("symbol")
+            active[0]["thought"] = f"🟢 POSITION OPEN: {pos.get('symbol')} @ ${pos.get('entry_price', 0):.4f} | Target: ${pos.get('target_price', 0):.4f} (+{pos.get('tp_pct', 0.03)*100:.1f}%)"
+        return active_real_position
+
+
+def update_real_position_price(current_price: float) -> Optional[dict]:
+    """Updates the position's live price, unrealized PnL, and adjusts trailing stop."""
+    global active_real_position
+    with swarm_lock:
+        if not active_real_position or current_price <= 0:
+            return None
+        
+        pos = active_real_position
+        entry = float(pos.get("entry_price", 0.0))
+        if entry <= 0:
+            return pos
+        
+        pos["current_price"] = current_price
+        pnl_pct = ((current_price - entry) / entry) * 100.0
+        pos["unrealized_pnl_pct"] = round(pnl_pct, 2)
+        pos["unrealized_pnl_usd"] = round((pos.get("cost_usd", 0.0) * (pnl_pct / 100.0)), 4)
+        
+        # Track highest price seen
+        highest = max(pos.get("highest_price", entry), current_price)
+        pos["highest_price"] = highest
+        
+        # Trailing Stop: If price moves up +1.5%, move stop-loss to Breakeven (+0.4% above entry)
+        if pnl_pct >= 1.5:
+            breakeven_sl = round(entry * 1.004, 6)
+            if breakeven_sl > pos.get("stop_loss_price", 0.0):
+                pos["stop_loss_price"] = breakeven_sl
+                pos["trailing_stop_active"] = True
+
+        return dict(pos)
+
+
+def clear_active_real_position() -> None:
+    global active_real_position
+    with swarm_lock:
+        active_real_position = None
+        active = [b for b in swarm_bots.values() if b["status"] == STATUS_ACTIVE]
+        if active:
+            active[0]["active_pair"] = None
+
+
+
