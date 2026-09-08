@@ -48,7 +48,7 @@ class BinanceExchangeConnector:
             
         self.exchange = exchange_class(config)
         self.markets_loaded = False
-        self._load_markets_safely()
+        # Markets loaded lazily on demand to ensure instant 0.1s backend startup
 
     def _load_markets_safely(self):
         try:

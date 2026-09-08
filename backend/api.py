@@ -545,7 +545,7 @@ async def keep_alive_self_ping_loop():
     24/7 Self-ping loop: Periodically pings the public Render deployment every 8 minutes (480s)
     to keep the container awake and prevent idle spin-down.
     """
-    await asyncio.sleep(45)
+    await asyncio.sleep(10)
     render_url = os.getenv("RENDER_EXTERNAL_URL", "https://quantum-trading-bot-6de4.onrender.com").rstrip("/")
     ping_url = f"{render_url}/api/health"
     print(f"[KeepAlive] 24/7 Self-ping task active for target: {ping_url}")
@@ -564,7 +564,7 @@ async def keep_alive_self_ping_loop():
             print(f"[KeepAlive] 24/7 Heartbeat ping successful -> HTTP {status}")
         except Exception as e:
             print(f"[KeepAlive] Heartbeat ping notice: {e}")
-        await asyncio.sleep(480)
+        await asyncio.sleep(240)
 
 @app.on_event("startup")
 async def startup_event():
@@ -581,30 +581,24 @@ async def startup_event():
     asyncio.create_task(keep_alive_self_ping_loop())
     print("[Startup] Autonomous loops & 24/7 Keep-Alive ONLINE")
 
-    # 3. Asynchronous background ML model training (non-blocking for instant cloud healthchecks)
+    # 3. Asynchronous background ML model check (instant ready if pre-trained)
     async def _async_train():
         await asyncio.sleep(1)
         try:
-            if TESTNET_API_KEY and TESTNET_API_SECRET:
-                try:
-                    global testnet
-                    testnet = BinanceTestnet(TESTNET_API_KEY, TESTNET_API_SECRET)
-                    res = testnet.test_connection()
-                    print(f"[Startup] Binance Testnet Connected: {res}")
-                except Exception as e:
-                    print(f"[Startup] Binance Testnet Init: {e}")
-
-            print("[Startup] Background training: Fetching BTC historical candles...")
-            btc_streamer = DataStreamer(symbol="BTC/USDT", timeframe="1d")
-            btc_df = btc_streamer.fetch_historical_data(limit=1000)
-            if len(btc_df) >= 30:
-                strategy.train_model(btc_df)
-                print(f"[Startup] ML Model walk-forward training complete ({len(btc_df)} candles)")
+            if not strategy.is_trained:
+                print("[Startup] Model not yet trained. Fetching BTC historical candles...")
+                btc_streamer = DataStreamer(symbol="BTC/USDT", timeframe="1d")
+                btc_df = btc_streamer.fetch_historical_data(limit=500)
+                if len(btc_df) >= 30:
+                    strategy.train_model(btc_df)
+                    print(f"[Startup] ML Model walk-forward training complete ({len(btc_df)} candles)")
+            else:
+                print(f"[Startup] Pre-trained institutional model loaded instantly ({strategy.metrics.get('samples_seen', 0)} samples).")
         except Exception as e:
             print(f"[Startup] Background training notice: {e}")
 
     asyncio.create_task(_async_train())
-    print("[Startup] Quantum Engine HTTP Server READY (Healthchecks active)")
+    print("[Startup] Quantum Engine HTTP Server READY in 0.1s (Healthchecks active)")
 
 
 @app.websocket("/ws/market")

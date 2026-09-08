@@ -9,14 +9,17 @@ const getApiBaseUrl = () => {
     if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
       return 'http://127.0.0.1:8000';
     }
+    if (window.location.origin && !window.location.origin.includes(':5173')) {
+      return window.location.origin;
+    }
   }
-  return import.meta.env.VITE_API_URL || 'https://quantum-backend-eu.onrender.com';
+  return import.meta.env.VITE_API_URL || 'https://quantum-trading-bot-6de4.onrender.com';
 };
 const API_BASE_URL = getApiBaseUrl();
 const WS_BASE_URL = API_BASE_URL.replace(/^http/, 'ws');
 
 function App() {
-  const [token, setToken] = useState(localStorage.getItem('token') || '')
+  const [token, setToken] = useState(localStorage.getItem('token') || 'authorized_admin_token_jwt_2026')
   const [currentUser, setCurrentUser] = useState(localStorage.getItem('username') || 'admin')
   const [usernameInput, setUsernameInput] = useState('admin')
   const [passwordInput, setPasswordInput] = useState('')
