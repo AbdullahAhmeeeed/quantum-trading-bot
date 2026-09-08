@@ -634,17 +634,22 @@ async def startup_event():
     bm.create_primary_bot()
     print(f"[Startup] Swarm initialized immediately. Active bots: {bm.get_swarm_summary()['active_count']}")
 
-    # 2. Auto-enable real trading and recover active spot holdings if live keys configured
-    if exchange_connector and getattr(exchange_connector, 'is_live', False):
-        try:
-            status = exchange_connector.test_connection()
-            if status.get('connected'):
-                usdt_b = float(status.get('usdt_balance', 0.0) or 0.0)
-                bm.enable_real_trading(amount=max(1.0, usdt_b), mode="SAFE", initial_wallet_usd=2.68)
-                sync_open_positions_from_exchange()
-                print(f"[Startup] Live Real Spot execution AUTO-ENABLED with ${usdt_b:.2f} USDT")
-        except Exception as conn_err:
-            print(f"[Startup] Auto real trading notice: {conn_err}")
+    # 2. Auto-enable real trading and recover active spot holdings in background
+    async def _async_exchange_init():
+        await asyncio.sleep(0.5)
+        if exchange_connector and getattr(exchange_connector, 'is_live', False):
+            try:
+                loop = asyncio.get_event_loop()
+                status = await loop.run_in_executor(None, exchange_connector.test_connection)
+                if status.get('connected'):
+                    usdt_b = float(status.get('usdt_balance', 0.0) or 0.0)
+                    bm.enable_real_trading(amount=max(1.0, usdt_b), mode="SAFE", initial_wallet_usd=2.68)
+                    await loop.run_in_executor(None, sync_open_positions_from_exchange)
+                    print(f"[Startup] Live Real Spot execution AUTO-ENABLED with ${usdt_b:.2f} USDT")
+            except Exception as conn_err:
+                print(f"[Startup] Auto real trading notice: {conn_err}")
+
+    asyncio.create_task(_async_exchange_init())
 
     # 3. Launch autonomous trading loops immediately
     asyncio.create_task(autonomous_trading_loop())
