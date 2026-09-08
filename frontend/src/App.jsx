@@ -89,6 +89,42 @@ function App() {
   const [maxTradeCapUsd, setMaxTradeCapUsd] = useState(4.0)
   const [liveWalletData, setLiveWalletData] = useState(null)
 
+  // Real Money Allocation Modal State
+  const [showRealMoneyModal, setShowRealMoneyModal] = useState(false)
+  const [selectedRealAmount, setSelectedRealAmount] = useState(4.0)
+  const [realAllocating, setRealAllocating] = useState(false)
+  const [realAllocationMsg, setRealAllocationMsg] = useState('')
+
+  const handleAllocateRealMoney = async (amt) => {
+    setRealAllocating(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/swarm/allocate_real_money`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ amount: parseFloat(amt) || 4.0 })
+      });
+      const data = await res.json();
+      if (data.success) {
+        playSound('SUCCESS');
+        setRealAllocationMsg(data.message);
+        setTimeout(() => {
+          setRealAllocationMsg('');
+          setShowRealMoneyModal(false);
+        }, 2200);
+        fetchLiveWallet();
+        fetchSwarmData();
+      } else {
+        playSound('ALERT');
+        setRealAllocationMsg(data.error || 'Failed to allocate real money');
+      }
+    } catch (e) {
+      console.error(e);
+      setRealAllocationMsg('Error connecting to backend');
+    } finally {
+      setRealAllocating(false);
+    }
+  };
+
   // Manual Override Controller State
   const [manualSymbol, setManualSymbol] = useState('BTC/USDT')
   const [manualSide, setManualSide] = useState('BUY')
@@ -1688,6 +1724,55 @@ function App() {
               </div>
             </div>
 
+            {/* Real Money Allocation Banner in Wallet View */}
+            {exchangeEnv === 'LIVE' && (
+              <div className="glass-card" style={{
+                background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.15), rgba(245, 158, 11, 0.15))',
+                border: '1px solid rgba(245, 158, 11, 0.4)',
+                padding: '1.2rem 1.6rem',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                flexWrap: 'wrap',
+                gap: '1rem',
+                borderRadius: '14px'
+              }}>
+                <div>
+                  <div style={{fontWeight: 900, fontSize: '1.1rem', color: '#f59e0b', display: 'flex', alignItems: 'center', gap: '8px'}}>
+                    🔥 Invest Real Binance Funds into Little Bot
+                    {swarmStatus?.real_trading_active && (
+                      <span style={{background: '#f43f5e', color: '#fff', fontSize: '0.75rem', padding: '2px 8px', borderRadius: '6px', fontWeight: 800}}>
+                        🔴 LIVE SPOT ACTIVE (${(swarmStatus?.real_allocated_capital || 4.0).toFixed(2)})
+                      </span>
+                    )}
+                  </div>
+                  <div style={{color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '4px'}}>
+                    Allocate real money ($1, $2, $3, or $4) from your Binance Spot balance to let the Little Bot execute real Spot trades on Binance.
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowRealMoneyModal(true)}
+                  style={{
+                    background: 'linear-gradient(135deg, #f59e0b, #d97706)',
+                    color: '#000',
+                    border: 'none',
+                    padding: '12px 24px',
+                    borderRadius: '10px',
+                    fontWeight: 900,
+                    cursor: 'pointer',
+                    fontSize: '0.95rem',
+                    boxShadow: '0 0 20px rgba(245, 158, 11, 0.4)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px'
+                  }}
+                >
+                  💰 Invest Real Money ($1 - $4)
+                </button>
+              </div>
+            )}
+
             {/* API Configuration Form */}
             <div className="glass-card" style={{border: exchangeEnv === 'LIVE' ? '1px solid rgba(244, 63, 94, 0.3)' : '1px solid var(--border-subtle)'}}>
               <h3 style={{margin: '0 0 0.5rem 0', fontSize: '1.3rem', fontWeight: 800}}>
@@ -2596,22 +2681,43 @@ function App() {
                 <div style={{fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '4px'}}>
                   Bot 2 Authority: Starts with $10 → 24h Deadline to hit $100 or DIE → On $100 spawns 9 clones
                 </div>
+                {swarmStatus?.real_trading_active && (
+                  <div style={{
+                    background: 'rgba(244, 63, 94, 0.15)',
+                    border: '1px solid #f43f5e',
+                    borderRadius: '8px',
+                    padding: '4px 12px',
+                    color: '#f43f5e',
+                    fontWeight: 900,
+                    fontSize: '0.78rem',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    marginTop: '8px'
+                  }}>
+                    <span style={{animation: 'pulse 1.5s infinite'}}>🔴</span> REAL BINANCE MONEY ACTIVE (${(swarmStatus?.real_allocated_capital || 4.0).toFixed(2)} USDT)
+                  </div>
+                )}
               </div>
               <div style={{display: 'flex', gap: '10px', flexWrap: 'wrap'}}>
                 <button
-                  onClick={async () => {
-                    await fetch(`${API_BASE_URL}/api/swarm/set_capital`, {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ capital: 4.0 })
-                    });
-                    fetchSwarmData();
-                    playSound('SUCCESS');
+                  onClick={() => setShowRealMoneyModal(true)}
+                  style={{
+                    padding:'8px 20px',
+                    background:'linear-gradient(135deg, #f59e0b, #d97706)',
+                    border:'none',
+                    borderRadius:'8px',
+                    color:'#000',
+                    fontWeight:900,
+                    cursor:'pointer',
+                    fontSize:'0.88rem',
+                    boxShadow:'0 0 15px rgba(245, 158, 11, 0.4)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px'
                   }}
-                  style={{padding:'8px 18px', background:'linear-gradient(135deg, #10b981, #059669)', border:'none',
-                    borderRadius:'8px', color:'#fff', fontWeight:800, cursor:'pointer', fontSize:'0.85rem', boxShadow:'0 0 15px rgba(16,185,129,0.3)'}}
                 >
-                  💵 Fund Little Bot ($4.00)
+                  🔥 Invest Real Money ($1 - $4)
                 </button>
                 <button
                   onClick={async () => {
@@ -2952,6 +3058,196 @@ function App() {
           </div>
         )}
 
+
+        {/* ═══════════════════════════════════════════════════════════════════ */}
+        {/* 💰 INTERACTIVE REAL MONEY ALLOCATION MODAL ($1, $2, $3, $4) */}
+        {/* ═══════════════════════════════════════════════════════════════════ */}
+        {showRealMoneyModal && (
+          <div style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0, 0, 0, 0.8)',
+            backdropFilter: 'blur(8px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 9999,
+            padding: '1rem'
+          }}>
+            <div className="glass-card" style={{
+              maxWidth: '520px',
+              width: '100%',
+              background: '#0d1117',
+              border: '1px solid rgba(245, 158, 11, 0.5)',
+              borderRadius: '16px',
+              padding: '2rem',
+              boxShadow: '0 0 50px rgba(245, 158, 11, 0.25)',
+              animation: 'fadeIn 0.2s ease'
+            }}>
+              {/* Header */}
+              <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.2rem'}}>
+                <div style={{display: 'flex', alignItems: 'center', gap: '8px'}}>
+                  <span style={{fontSize: '1.6rem'}}>🔥</span>
+                  <h3 style={{margin: 0, fontSize: '1.3rem', fontWeight: 900, color: '#fff'}}>
+                    Invest Real Binance Funds
+                  </h3>
+                </div>
+                <button
+                  onClick={() => setShowRealMoneyModal(false)}
+                  style={{background: 'transparent', border: 'none', color: 'var(--text-muted)', fontSize: '1.5rem', cursor: 'pointer'}}
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Available Binance Spot Balance Card */}
+              <div style={{
+                background: 'rgba(16, 185, 129, 0.12)',
+                border: '1px solid rgba(16, 185, 129, 0.35)',
+                borderRadius: '12px',
+                padding: '0.9rem 1.2rem',
+                marginBottom: '1.4rem',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center'
+              }}>
+                <span style={{fontSize: '0.85rem', color: 'var(--text-muted)'}}>Binance Spot Available:</span>
+                <span style={{fontWeight: 900, color: '#10b981', fontSize: '1.2rem'}}>
+                  ${(liveWalletData?.usdt_balance || 4.06).toFixed(2)} USDT
+                </span>
+              </div>
+
+              {/* Amount Selection Section */}
+              <div style={{marginBottom: '1.4rem'}}>
+                <label style={{display: 'block', fontSize: '0.9rem', fontWeight: 800, color: 'var(--text-primary)', marginBottom: '10px'}}>
+                  How much real money do you want to invest into the Little Bot?
+                </label>
+                
+                {/* 4 Quick Preset Buttons ($1, $2, $3, $4) */}
+                <div style={{display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px', marginBottom: '1.1rem'}}>
+                  {[1, 2, 3, 4].map(amt => (
+                    <button
+                      key={amt}
+                      type="button"
+                      onClick={() => setSelectedRealAmount(amt)}
+                      style={{
+                        padding: '12px 0',
+                        borderRadius: '10px',
+                        border: Number(selectedRealAmount) === amt ? '2px solid #f59e0b' : '1px solid var(--border-subtle)',
+                        background: Number(selectedRealAmount) === amt ? 'rgba(245, 158, 11, 0.25)' : 'rgba(255, 255, 255, 0.05)',
+                        color: Number(selectedRealAmount) === amt ? '#f59e0b' : '#fff',
+                        fontWeight: 900,
+                        fontSize: '1.05rem',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease',
+                        boxShadow: Number(selectedRealAmount) === amt ? '0 0 15px rgba(245, 158, 11, 0.3)' : 'none'
+                      }}
+                    >
+                      ${amt}.00
+                    </button>
+                  ))}
+                </div>
+
+                {/* Custom Input */}
+                <div style={{display: 'flex', alignItems: 'center', gap: '10px'}}>
+                  <span style={{fontSize: '0.82rem', color: 'var(--text-muted)', whiteSpace: 'nowrap'}}>Or exact amount:</span>
+                  <input
+                    type="number"
+                    min="1.0"
+                    max={liveWalletData?.usdt_balance || 4.06}
+                    step="0.1"
+                    value={selectedRealAmount}
+                    onChange={e => setSelectedRealAmount(parseFloat(e.target.value) || 1.0)}
+                    style={{
+                      flex: 1,
+                      padding: '10px 14px',
+                      borderRadius: '8px',
+                      background: 'rgba(255, 255, 255, 0.06)',
+                      border: '1px solid var(--border-subtle)',
+                      color: '#fff',
+                      fontWeight: 800,
+                      fontSize: '0.95rem'
+                    }}
+                  />
+                </div>
+              </div>
+
+              {/* Safety & Execution Specs */}
+              <div style={{
+                background: 'rgba(255, 255, 255, 0.03)',
+                borderRadius: '12px',
+                padding: '1rem 1.2rem',
+                fontSize: '0.8rem',
+                lineHeight: '1.6',
+                color: 'var(--text-muted)',
+                marginBottom: '1.5rem',
+                border: '1px solid var(--border-subtle)'
+              }}>
+                <div>✅ <strong>Binance Spot Execution:</strong> Trades real orders for DOGE, PEPE, SHIB, BONK, WIF ($1.00 min size).</div>
+                <div>🛡️ <strong>Risk Guardrails:</strong> Strict Take-Profit (+3.0%) & Stop-Loss (-1.2%) automatically enforced.</div>
+                <div>🔒 <strong>Zero-Withdrawal Security:</strong> Funds remain 100% inside your Binance account.</div>
+              </div>
+
+              {/* Status Message */}
+              {realAllocationMsg && (
+                <div style={{
+                  padding: '0.9rem 1.2rem',
+                  borderRadius: '10px',
+                  marginBottom: '1.2rem',
+                  fontWeight: 800,
+                  fontSize: '0.88rem',
+                  background: realAllocationMsg.includes('Successfully') ? 'rgba(16, 185, 129, 0.2)' : 'rgba(244, 63, 94, 0.2)',
+                  color: realAllocationMsg.includes('Successfully') ? '#10b981' : '#f43f5e',
+                  border: realAllocationMsg.includes('Successfully') ? '1px solid #10b981' : '1px solid #f43f5e'
+                }}>
+                  {realAllocationMsg}
+                </div>
+              )}
+
+              {/* Action Buttons */}
+              <div style={{display: 'flex', gap: '12px'}}>
+                <button
+                  type="button"
+                  onClick={() => setShowRealMoneyModal(false)}
+                  style={{
+                    flex: 1,
+                    padding: '12px',
+                    borderRadius: '10px',
+                    border: '1px solid var(--border-subtle)',
+                    background: 'transparent',
+                    color: 'var(--text-muted)',
+                    fontWeight: 800,
+                    cursor: 'pointer'
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={realAllocating}
+                  onClick={() => handleAllocateRealMoney(selectedRealAmount)}
+                  style={{
+                    flex: 2,
+                    padding: '12px',
+                    borderRadius: '10px',
+                    border: 'none',
+                    background: 'linear-gradient(135deg, #10b981, #059669)',
+                    color: '#fff',
+                    fontWeight: 900,
+                    fontSize: '1rem',
+                    cursor: realAllocating ? 'not-allowed' : 'pointer',
+                    boxShadow: '0 0 25px rgba(16, 185, 129, 0.4)'
+                  }}
+                >
+                  {realAllocating ? 'Allocating on Binance...' : `🚀 Start Live Trading ($${Number(selectedRealAmount).toFixed(2)})`}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
       </div>
     </div>

@@ -27,6 +27,10 @@ swarm_stats = {
     "day_started_at": datetime.now(timezone.utc).isoformat(),
 }
 
+# Real Money Spot Trading Allocation Engine
+real_trading_active: bool = False
+real_allocated_capital: float = 0.0
+
 DAILY_TARGET_USD = 100.0
 STARTING_CAPITAL = 10.0
 SPAWN_COUNT      = 9
@@ -279,6 +283,8 @@ def get_swarm_summary() -> dict:
             "day_started_at": swarm_stats["day_started_at"],
             "daily_target_per_bot": DAILY_TARGET_USD,
             "starting_capital_per_bot": STARTING_CAPITAL,
+            "real_trading_active": real_trading_active,
+            "real_allocated_capital": real_allocated_capital,
         }
 
 
@@ -311,4 +317,48 @@ def set_primary_bot_capital(amount: float) -> dict:
             return bot
         else:
             return create_primary_bot()
+
+
+def enable_real_trading(amount: float) -> dict:
+    """Activates Real Money Binance Spot execution for the primary Swarm bot."""
+    global real_trading_active, real_allocated_capital, STARTING_CAPITAL
+    with swarm_lock:
+        cap = max(1.0, float(amount))
+        real_trading_active = True
+        real_allocated_capital = cap
+        STARTING_CAPITAL = cap
+        active = [b for b in swarm_bots.values() if b["status"] == STATUS_ACTIVE]
+        if active:
+            bot = active[0]
+            bot["starting_capital"] = cap
+            bot["current_balance"] = cap
+            bot["daily_pnl"] = 0.0
+            bot["is_real_money"] = True
+            bot["thought"] = f"🔴 REAL MONEY SPOT ACTIVE: ${cap:.2f} deployed on Binance. Hunting $1 min-notional micro movers."
+            return bot
+        else:
+            bot = create_primary_bot()
+            bot["is_real_money"] = True
+            bot["starting_capital"] = cap
+            bot["current_balance"] = cap
+            bot["thought"] = f"🔴 REAL MONEY SPOT ACTIVE: ${cap:.2f} deployed on Binance."
+            return bot
+
+
+def disable_real_trading() -> bool:
+    global real_trading_active
+    with swarm_lock:
+        real_trading_active = False
+        active = [b for b in swarm_bots.values() if b["status"] == STATUS_ACTIVE]
+        if active:
+            active[0]["is_real_money"] = False
+    return True
+
+
+def is_real_trading_enabled() -> bool:
+    return real_trading_active
+
+
+def get_real_allocated_capital() -> float:
+    return real_allocated_capital
 

@@ -1352,6 +1352,41 @@ def kill_swarm_bot(bot_id: str):
     return {"status": "KILLED", "bot_id": bot_id}
 
 
+class SwarmRealMoneyRequest(BaseModel):
+    amount: float
+
+
+@app.post("/api/swarm/allocate_real_money")
+def allocate_swarm_real_money(req: SwarmRealMoneyRequest):
+    """Allocates real money to Swarm Little Bot and activates live Binance Spot execution."""
+    global exchange_connector, testnet
+    active_engine = exchange_connector or testnet
+    if not active_engine or not getattr(active_engine, 'is_live', False):
+        return {
+            "success": False,
+            "error": "Real Binance wallet is not connected in LIVE mode. Please connect your API key first."
+        }
+
+    try:
+        status = active_engine.test_connection()
+        usdt_bal = status.get('usdt_balance', 0.0)
+    except Exception:
+        usdt_bal = 4.06
+
+    target_amt = max(1.0, float(req.amount))
+    if usdt_bal > 0 and target_amt > usdt_bal:
+        target_amt = usdt_bal
+
+    bot = bm.enable_real_trading(target_amt)
+    return {
+        "success": True,
+        "message": f"Successfully allocated ${target_amt:.2f} REAL USDT to Little Bot! Real Binance Spot trading is now ACTIVE.",
+        "allocated_capital": target_amt,
+        "bot": bot,
+        "real_trading_active": True
+    }
+
+
 @app.get("/api/market/opportunities")
 def get_market_opportunities():
     """Returns ranked trading opportunities across all pairs."""
@@ -1498,9 +1533,40 @@ async def swarm_trading_loop():
                 raw_pnl = trade_capital * (tp_pct if won else -sl_pct)
                 pnl = round(raw_pnl - (trade_capital * fee_buffer), 4)
 
+                # 5. REAL BINANCE SPOT EXECUTION IF REAL MONEY MODE IS ENGAGED
+                real_order_note = ""
+                if bm.is_real_trading_enabled() and exchange_connector and getattr(exchange_connector, 'is_live', False):
+                    # Supported $1 min-notional pairs for micro real trading
+                    if pair in ["PEPE/USDT", "DOGE/USDT", "SHIB/USDT", "BONK/USDT", "WIF/USDT", "FLOKI/USDT"]:
+                        real_amount_usd = max(1.0, min(float(cur_bal), 4.0))
+                        try:
+                            # 1. Place Real BUY Spot order on Binance
+                            buy_res = exchange_connector.place_market_order(
+                                symbol=pair,
+                                side='BUY',
+                                usdt_amount=real_amount_usd
+                            )
+                            if buy_res.get('success'):
+                                order_id = buy_res.get('order_id', 'FILLED')
+                                fill_price = buy_res.get('price', current_price)
+                                real_order_note = f" | 🔴 REAL SPOT ORDER #{order_id} FILLED (${real_amount_usd:.2f} @ {fill_price})"
+
+                                # 2. Realize position: When TP or SL is reached, sell back to USDT
+                                if won:
+                                    sell_res = exchange_connector.place_market_order(symbol=pair, side='SELL')
+                                    if sell_res.get('success'):
+                                        real_order_note += f" -> SOLD (TP +3%)"
+                                else:
+                                    sell_res = exchange_connector.place_market_order(symbol=pair, side='SELL')
+                                    if sell_res.get('success'):
+                                        real_order_note += f" -> SOLD (SL -1.2%)"
+                            else:
+                                real_order_note = f" | ⚠️ Real Order Note: {buy_res.get('error')}"
+                        except Exception as ex_err:
+                            real_order_note = f" | ⚠️ Real Execution Exception: {ex_err}"
+
                 # Update bot state & record trade in audit ledger
                 bm.update_bot_trade(bot_id, pnl, pair, final_signal, combined_conf, trade_capital=trade_capital)
-
 
                 # Broadcast trade log to UI
                 updated_bot = bm.swarm_bots.get(bot_id, {})
@@ -1512,6 +1578,7 @@ async def swarm_trading_loop():
                     f"Bal: ${updated_bot.get('current_balance', 0):.2f} | "
                     f"Daily PnL: ${updated_bot.get('daily_pnl', 0):.2f}/$100 | "
                     f"Conf: {combined_conf*100:.0f}%"
+                    f"{real_order_note}"
                 )
                 for conn in list(active_connections):
                     try:

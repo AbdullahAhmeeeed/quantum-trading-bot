@@ -137,9 +137,10 @@ class BinanceExchangeConnector:
             print(f"[BinanceLive] Price fetch error ({symbol}): {e}")
             return 0.0
 
-    def place_market_order(self, symbol: str, side: str, usdt_amount: float) -> dict:
+    def place_market_order(self, symbol: str, side: str, usdt_amount: float = 0.0, coin_quantity: float = 0.0) -> dict:
         """
-        Place real market order with LOT_SIZE precision and maximum trade capital cap.
+        Place real market order with dynamic LOT_SIZE precision, min-notional detection ($1.00+),
+        and automatic base-currency balance resolution for SELL orders.
         """
         try:
             if not self.markets_loaded:
@@ -149,16 +150,35 @@ class BinanceExchangeConnector:
             if price <= 0:
                 return {'success': False, 'error': f'Cannot fetch live market price for {symbol}'}
 
-            # Enforce max trade capital cap (Capital Protection Guardrail)
-            effective_capital = min(float(usdt_amount), self.max_trade_cap_usd)
-            
-            # Binance minimum notional filter: standard spot requires at least 5.0 to 10.0 USDT
-            if effective_capital < 5.0:
-                effective_capital = 5.0
+            side_clean = side.upper()
 
-            raw_qty = effective_capital / price
-            qty_str = self.exchange.amount_to_precision(symbol, raw_qty)
-            quantity = float(qty_str)
+            if side_clean == 'BUY':
+                # Check dynamic min notional from Binance market rules
+                min_cost = 1.0
+                if self.markets_loaded and symbol in self.exchange.markets:
+                    min_cost = self.exchange.markets[symbol].get('limits', {}).get('cost', {}).get('min', 1.0) or 1.0
+                
+                effective_capital = max(float(usdt_amount), float(min_cost))
+                effective_capital = min(effective_capital, self.max_trade_cap_usd)
+
+                raw_qty = effective_capital / price
+                qty_str = self.exchange.amount_to_precision(symbol, raw_qty)
+                quantity = float(qty_str)
+
+            elif side_clean == 'SELL':
+                if coin_quantity > 0:
+                    quantity = float(self.exchange.amount_to_precision(symbol, coin_quantity))
+                else:
+                    # Automatically fetch free balance of base coin (e.g. PEPE, DOGE) to sell
+                    base_currency = symbol.split('/')[0]
+                    bal = self.exchange.fetch_balance({'type': 'spot'})
+                    free_coin = bal.get(base_currency, {}).get('free', 0.0)
+                    if free_coin <= 0:
+                        return {'success': False, 'error': f'No free {base_currency} balance available to sell'}
+                    qty_str = self.exchange.amount_to_precision(symbol, free_coin)
+                    quantity = float(qty_str)
+            else:
+                return {'success': False, 'error': f'Invalid order side: {side}'}
 
             if quantity <= 0:
                 return {'success': False, 'error': f'Calculated quantity {quantity} is below Binance minimum step size'}
@@ -166,7 +186,7 @@ class BinanceExchangeConnector:
             order = self.exchange.create_order(
                 symbol=symbol,
                 type='market',
-                side=side.lower(),
+                side=side_clean.lower(),
                 amount=quantity
             )
 
@@ -175,7 +195,7 @@ class BinanceExchangeConnector:
                 'success': True,
                 'order_id': order.get('id', 'N/A'),
                 'symbol': symbol,
-                'side': side.upper(),
+                'side': side_clean,
                 'amount': quantity,
                 'price': avg_price,
                 'cost_usd': round(quantity * avg_price, 4),
