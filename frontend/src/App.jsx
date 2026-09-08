@@ -103,6 +103,7 @@ function App() {
   const [activePositions, setActivePositions] = useState([])
   const [closingPosition, setClosingPosition] = useState(false)
   const [closingSymbol, setClosingSymbol] = useState(null)
+  const [selfLearningData, setSelfLearningData] = useState(null)
 
   const handleClosePosition = async (symbol = null) => {
     setClosingPosition(true);
@@ -623,12 +624,13 @@ function App() {
 
   const fetchSwarmData = async () => {
     try {
-      const [statusRes, oppRes, perfRes, pnlRes, posRes] = await Promise.all([
+      const [statusRes, oppRes, perfRes, pnlRes, posRes, selfLearnRes] = await Promise.all([
         fetch(`${API_BASE_URL}/api/swarm/status`),
         fetch(`${API_BASE_URL}/api/market/opportunities`),
         fetch(`${API_BASE_URL}/api/swarm/performance`),
         fetch(`${API_BASE_URL}/api/swarm/real_pnl`),
         fetch(`${API_BASE_URL}/api/swarm/active_position`),
+        fetch(`${API_BASE_URL}/api/self_learning/dashboard`),
       ]);
       if (statusRes.ok) setSwarmStatus(await statusRes.json());
       if (oppRes.ok) {
@@ -642,6 +644,12 @@ function App() {
         const list = posData.positions || (posData.position ? [posData.position] : []);
         setActivePositions(list);
         setActivePositionData(list.length > 0 ? list[0] : null);
+      }
+      if (selfLearnRes && selfLearnRes.ok) {
+        const slData = await selfLearnRes.json();
+        if (slData.success && slData.data) {
+          setSelfLearningData(slData.data);
+        }
       }
     } catch (e) {
       // quiet fallback
@@ -3074,6 +3082,242 @@ function App() {
                 </span>
               </div>
             ) : null}
+
+            {/* 🧠 QUANTUM AI SELF-LEARNING INTELLIGENCE CARD */}
+            <div style={{
+              background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.05), rgba(99, 102, 241, 0.08))',
+              border: '1px solid rgba(99, 102, 241, 0.25)',
+              borderRadius: '14px',
+              padding: '1.2rem',
+              marginBottom: '1.4rem',
+              boxShadow: '0 4px 20px rgba(0, 0, 0, 0.25)'
+            }}>
+              {/* Header */}
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                flexWrap: 'wrap',
+                gap: '8px',
+                marginBottom: '1rem',
+                borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+                paddingBottom: '0.8rem'
+              }}>
+                <div style={{display: 'flex', alignItems: 'center', gap: '10px'}}>
+                  <span style={{fontSize: '1.4rem'}}>🧠</span>
+                  <div>
+                    <div style={{fontSize: '1rem', fontWeight: 800, color: '#a5b4fc', letterSpacing: '0.5px'}}>
+                      AUTONOMOUS SELF-LEARNING ENGINE
+                    </div>
+                    <div style={{fontSize: '0.75rem', color: 'var(--text-muted)'}}>
+                      Every real trade outcome is permanently journaled in SQLite to eliminate past mistakes
+                    </div>
+                  </div>
+                </div>
+                <div style={{display: 'flex', alignItems: 'center', gap: '8px'}}>
+                  <span style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    fontSize: '0.72rem',
+                    fontWeight: 700,
+                    padding: '3px 10px',
+                    borderRadius: '20px',
+                    background: 'rgba(16, 185, 129, 0.15)',
+                    border: '1px solid rgba(16, 185, 129, 0.4)',
+                    color: '#34d399'
+                  }}>
+                    <span style={{width: 6, height: 6, borderRadius: '50%', background: '#10b981', display: 'inline-block'}} />
+                    Trade Memory Active
+                  </span>
+                  <span style={{
+                    fontSize: '0.72rem',
+                    padding: '3px 8px',
+                    borderRadius: '6px',
+                    background: 'rgba(99, 102, 241, 0.15)',
+                    border: '1px solid rgba(99, 102, 241, 0.3)',
+                    color: '#c7d2fe'
+                  }}>
+                    Adapted: {selfLearningData?.adaptation_count || 0}x
+                  </span>
+                </div>
+              </div>
+
+              {/* 4 Stat Metrics Grid */}
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+                gap: '0.75rem',
+                marginBottom: '1rem'
+              }}>
+                <div style={{background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '8px', padding: '0.7rem'}}>
+                  <div style={{fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '3px'}}>Trade Memory</div>
+                  <div style={{fontSize: '1.2rem', fontWeight: 800, color: '#f8fafc'}}>
+                    {selfLearningData?.total_trades || 0}
+                    <span style={{fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 400, marginLeft: '4px'}}>
+                      ({selfLearningData?.open_trades || 0} active)
+                    </span>
+                  </div>
+                  <div style={{fontSize: '0.68rem', color: '#94a3b8', marginTop: '2px'}}>Recorded in Journal</div>
+                </div>
+
+                <div style={{background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '8px', padding: '0.7rem'}}>
+                  <div style={{fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '3px'}}>Win Rate</div>
+                  <div style={{
+                    fontSize: '1.2rem',
+                    fontWeight: 800,
+                    color: (selfLearningData?.overall_win_rate || 0) >= 50 ? '#34d399' : '#f87171'
+                  }}>
+                    {Number(selfLearningData?.overall_win_rate || 0).toFixed(1)}%
+                  </div>
+                  <div style={{fontSize: '0.68rem', color: '#94a3b8', marginTop: '2px'}}>
+                    {selfLearningData?.total_wins || 0} Wins / {selfLearningData?.total_losses || 0} Losses
+                  </div>
+                </div>
+
+                <div style={{background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '8px', padding: '0.7rem'}}>
+                  <div style={{fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '3px'}}>Learned Parameters</div>
+                  <div style={{fontSize: '0.85rem', fontWeight: 700, color: '#38bdf8'}}>
+                    TP: +{((selfLearningData?.adaptive_params?.tp_pct || 0.018) * 100).toFixed(1)}%
+                  </div>
+                  <div style={{fontSize: '0.75rem', color: '#fb7185', fontWeight: 600}}>
+                    SL: -{((selfLearningData?.adaptive_params?.sl_pct || 0.008) * 100).toFixed(1)}% (Trail: {((selfLearningData?.adaptive_params?.trailing_dist_pct || 0.008) * 100).toFixed(1)}%)
+                  </div>
+                </div>
+
+                <div style={{background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '8px', padding: '0.7rem'}}>
+                  <div style={{fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '3px'}}>AI Outcome Model</div>
+                  <div style={{fontSize: '0.85rem', fontWeight: 700, color: '#c084fc'}}>
+                    {selfLearningData?.outcome_model_status || 'Needs 15+ trades'}
+                  </div>
+                  <div style={{fontSize: '0.68rem', color: '#94a3b8', marginTop: '2px'}}>
+                    Min Gate: {((selfLearningData?.adaptive_params?.min_confidence || 0.70) * 100).toFixed(0)}% Conf
+                  </div>
+                </div>
+              </div>
+
+              {/* Coin Reputation System Matrix */}
+              <div style={{
+                background: 'rgba(0,0,0,0.25)',
+                border: '1px solid rgba(255,255,255,0.05)',
+                borderRadius: '8px',
+                padding: '0.8rem',
+                marginBottom: '0.8rem'
+              }}>
+                <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem'}}>
+                  <span style={{fontSize: '0.75rem', fontWeight: 700, color: '#e2e8f0', textTransform: 'uppercase', letterSpacing: '0.5px'}}>
+                    🪙 Dynamic Coin Reputation & Blacklist Protection
+                  </span>
+                  <span style={{fontSize: '0.68rem', color: 'var(--text-muted)'}}>
+                    Grades A+ to F (Grade F auto-blacklisted)
+                  </span>
+                </div>
+                <div style={{display: 'flex', flexWrap: 'wrap', gap: '8px'}}>
+                  {selfLearningData?.coin_reputations && selfLearningData.coin_reputations.length > 0 ? (
+                    selfLearningData.coin_reputations.map((coin, cIdx) => (
+                      <div key={cIdx} style={{
+                        background: coin.is_blacklisted ? 'rgba(239, 68, 68, 0.15)' : 'rgba(255,255,255,0.04)',
+                        border: coin.is_blacklisted ? '1px solid rgba(239, 68, 68, 0.4)' : '1px solid rgba(255,255,255,0.1)',
+                        borderRadius: '6px',
+                        padding: '4px 10px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        fontSize: '0.75rem'
+                      }}>
+                        <span style={{fontWeight: 700, color: '#f8fafc'}}>{coin.symbol.replace('/USDT', '')}</span>
+                        <span style={{
+                          fontSize: '0.65rem',
+                          fontWeight: 800,
+                          padding: '1px 5px',
+                          borderRadius: '4px',
+                          background: coin.grade === 'A+' || coin.grade === 'A' ? 'rgba(16, 185, 129, 0.25)' :
+                                      coin.grade === 'B' ? 'rgba(56, 189, 248, 0.25)' :
+                                      coin.grade === 'C' ? 'rgba(234, 179, 8, 0.25)' :
+                                      coin.grade === 'F' ? 'rgba(239, 68, 68, 0.3)' : 'rgba(148, 163, 184, 0.2)',
+                          color: coin.grade === 'A+' || coin.grade === 'A' ? '#34d399' :
+                                 coin.grade === 'B' ? '#38bdf8' :
+                                 coin.grade === 'C' ? '#facc15' :
+                                 coin.grade === 'F' ? '#f87171' : '#94a3b8'
+                        }}>
+                          {coin.grade}
+                        </span>
+                        <span style={{fontSize: '0.68rem', color: 'var(--text-muted)'}}>
+                          {(coin.win_rate * 100).toFixed(0)}% WR ({coin.total_trades}T)
+                        </span>
+                        {coin.is_blacklisted ? (
+                          <span style={{fontSize: '0.65rem', color: '#f87171', fontWeight: 700}}>🚫 BLOCKED</span>
+                        ) : null}
+                      </div>
+                    ))
+                  ) : (
+                    ['DOGE/USDT', 'PEPE/USDT', 'SHIB/USDT', 'BONK/USDT', 'WIF/USDT'].map((sym, sIdx) => (
+                      <div key={sIdx} style={{
+                        background: 'rgba(255,255,255,0.03)',
+                        border: '1px solid rgba(255,255,255,0.06)',
+                        borderRadius: '6px',
+                        padding: '4px 10px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        fontSize: '0.75rem'
+                      }}>
+                        <span style={{fontWeight: 700, color: '#cbd5e1'}}>{sym.replace('/USDT', '')}</span>
+                        <span style={{fontSize: '0.65rem', padding: '1px 5px', borderRadius: '4px', background: 'rgba(148, 163, 184, 0.15)', color: '#94a3b8'}}>
+                          NEW
+                        </span>
+                        <span style={{fontSize: '0.68rem', color: 'var(--text-muted)'}}>Accumulating data</span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              {/* Recent Self-Learned Completed Trades Feed */}
+              {selfLearningData?.recent_trades && selfLearningData.recent_trades.length > 0 && (
+                <div style={{
+                  background: 'rgba(0,0,0,0.25)',
+                  border: '1px solid rgba(255,255,255,0.05)',
+                  borderRadius: '8px',
+                  padding: '0.7rem'
+                }}>
+                  <div style={{fontSize: '0.72rem', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', marginBottom: '0.5rem'}}>
+                    📖 Recent Trade Memory Journal
+                  </div>
+                  <div style={{display: 'flex', flexDirection: 'column', gap: '4px'}}>
+                    {selfLearningData.recent_trades.slice(0, 4).map((rt, rtIdx) => (
+                      <div key={rtIdx} style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        fontSize: '0.72rem',
+                        padding: '3px 6px',
+                        borderRadius: '4px',
+                        background: rt.pnl_pct >= 0 ? 'rgba(16, 185, 129, 0.06)' : 'rgba(239, 68, 68, 0.06)'
+                      }}>
+                        <div style={{display: 'flex', gap: '8px', alignItems: 'center'}}>
+                          <span style={{fontWeight: 700, color: '#f1f5f9'}}>{rt.symbol}</span>
+                          <span style={{fontSize: '0.65rem', color: 'var(--text-muted)'}}>
+                            {rt.exit_reason?.replace('_', ' ')}
+                          </span>
+                        </div>
+                        <div style={{display: 'flex', gap: '8px', alignItems: 'center'}}>
+                          <span style={{
+                            fontWeight: 700,
+                            color: rt.pnl_pct >= 0 ? '#34d399' : '#f87171'
+                          }}>
+                            {rt.pnl_pct >= 0 ? '+' : ''}{Number(rt.pnl_pct).toFixed(2)}% (${Number(rt.pnl_usd).toFixed(4)})
+                          </span>
+                          <span style={{color: 'var(--text-muted)', fontSize: '0.65rem'}}>
+                            {Math.round(rt.duration_seconds || 0)}s
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
 
             {/* Two-Bot System Architecture Banner */}
             <div style={{

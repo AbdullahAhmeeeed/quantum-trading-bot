@@ -17,6 +17,7 @@ import pandas as pd
 import numpy as np
 from pydantic import BaseModel
 import bot_manager as bm
+from trade_memory import trade_memory as tmem
 from opportunity_scanner import scan_opportunities, get_cached_opportunities, get_best_opportunity, DEFAULT_PRICES, TRADING_UNIVERSE
 from datetime import datetime, timezone
 from typing import Optional, List, Dict
@@ -1544,10 +1545,20 @@ def manual_close_swarm_position(symbol: Optional[str] = None):
     errors = []
     for pos in targets:
         sym = pos.get("symbol")
+        mem_id = pos.get("memory_trade_id")
+        entry_p = float(pos.get("entry_price", 0))
         if active_engine and getattr(active_engine, 'is_live', False):
             try:
+                curr_p = active_engine.get_price(sym) if hasattr(active_engine, 'get_price') else entry_p
                 sell_res = active_engine.place_market_order(symbol=sym, side='SELL')
                 if sell_res.get("success"):
+                    if mem_id:
+                        try:
+                            tmem.record_exit(mem_id, curr_p or entry_p, "MANUAL_EXIT",
+                                             highest_price=pos.get("highest_price"),
+                                             lowest_price=pos.get("lowest_price", entry_p))
+                        except Exception as mem_err:
+                            print(f"[TradeMemory] Manual close error: {mem_err}")
                     bm.remove_real_position(sym)
                     closed.append(sym)
                 else:
@@ -1560,6 +1571,11 @@ def manual_close_swarm_position(symbol: Optional[str] = None):
             except Exception as e:
                 errors.append(f"{sym}: {str(e)}")
         else:
+            if mem_id:
+                try:
+                    tmem.record_exit(mem_id, entry_p, "MANUAL_EXIT")
+                except Exception:
+                    pass
             bm.remove_real_position(sym)
             closed.append(sym)
             
@@ -1574,6 +1590,22 @@ def get_market_opportunities():
     live_prices = {pair: live_candles.get(pair, {}).get("close", 0) for pair in SWARM_TRADING_UNIVERSE}
     opps = scan_opportunities(live_prices)
     return {"opportunities": opps, "top_pick": opps[0] if opps else None, "timestamp": int(time.time())}
+
+
+@app.get("/api/self_learning/dashboard")
+def get_self_learning_dashboard():
+    """Returns the self-learning intelligence dashboard data."""
+    try:
+        summary = tmem.get_performance_summary()
+        return {"success": True, "data": summary}
+    except Exception as e:
+        return {"success": False, "error": str(e), "data": {
+            "total_trades": 0, "open_trades": 0, "total_wins": 0, "total_losses": 0,
+            "overall_win_rate": 0, "total_pnl_usd": 0, "avg_pnl_pct": 0,
+            "outcome_model_status": "Not initialized", "coin_reputations": [],
+            "adaptive_params": {"tp_pct": 0.018, "sl_pct": 0.008, "trailing_dist_pct": 0.008, "min_confidence": 0.70},
+            "recent_trades": [], "exit_reason_breakdown": {}
+        }}
 
 
 @app.get("/api/swarm/performance")
@@ -1691,6 +1723,15 @@ async def swarm_trading_loop():
                     if live_p >= target_p:
                         sell_res = exchange_connector.place_market_order(symbol=sym, side='SELL')
                         if sell_res.get('success'):
+                            # Record exit in self-learning trade memory
+                            mem_id = active_real_pos.get("memory_trade_id")
+                            if mem_id:
+                                try:
+                                    tmem.record_exit(mem_id, live_p, "TAKE_PROFIT",
+                                                     highest_price=updated_pos.get("highest_price"),
+                                                     lowest_price=updated_pos.get("lowest_price", entry_p))
+                                except Exception as mem_err:
+                                    print(f"[TradeMemory] TP exit record error: {mem_err}")
                             bm.remove_real_position(sym)
                             profit_msg = f"🏆 REAL SPOT TAKE-PROFIT HIT! Sold {sym} @ ${live_p:.8f} (+{pnl_pct:.2f}% | +${pnl_usd:.4f} USD) | Binance Profit Locked!"
                             with bm.swarm_lock:
@@ -1709,8 +1750,18 @@ async def swarm_trading_loop():
                     elif live_p <= stop_p:
                         sell_res = exchange_connector.place_market_order(symbol=sym, side='SELL')
                         if sell_res.get('success'):
-                            bm.remove_real_position(sym)
+                            # Record exit in self-learning trade memory
                             is_win = pnl_pct >= 0
+                            mem_id = active_real_pos.get("memory_trade_id")
+                            exit_reason = "TRAILING_PROFIT" if is_win else "STOP_LOSS"
+                            if mem_id:
+                                try:
+                                    tmem.record_exit(mem_id, live_p, exit_reason,
+                                                     highest_price=updated_pos.get("highest_price"),
+                                                     lowest_price=updated_pos.get("lowest_price", entry_p))
+                                except Exception as mem_err:
+                                    print(f"[TradeMemory] SL exit record error: {mem_err}")
+                            bm.remove_real_position(sym)
                             sl_tag = "🎉 TRAILING PROFIT SECURED" if is_win else "🛡️ REAL SPOT STOP-LOSS TRIGGERED"
                             sl_msg = f"{sl_tag}: Sold {sym} @ ${live_p:.8f} ({pnl_pct:+.2f}% | {pnl_usd:+.4f} USD) to protect capital."
                             with bm.swarm_lock:
@@ -1743,6 +1794,15 @@ async def swarm_trading_loop():
                     elif is_stagnant:
                         sell_res = exchange_connector.place_market_order(symbol=sym, side='SELL')
                         if sell_res.get('success'):
+                            # Record exit in self-learning trade memory
+                            mem_id = active_real_pos.get("memory_trade_id")
+                            if mem_id:
+                                try:
+                                    tmem.record_exit(mem_id, live_p, "STAGNATION_TIMEOUT",
+                                                     highest_price=updated_pos.get("highest_price"),
+                                                     lowest_price=updated_pos.get("lowest_price", entry_p))
+                                except Exception as mem_err:
+                                    print(f"[TradeMemory] Stagnation exit record error: {mem_err}")
                             bm.remove_real_position(sym)
                             stag_msg = f"⏰ 25-MIN STAGNATION TIMEOUT: Sold {sym} @ ${live_p:.8f} ({pnl_pct:+.2f}%) to free slot for high-velocity coins."
                             for conn in list(active_connections):
@@ -1770,6 +1830,12 @@ async def swarm_trading_loop():
                     current_positions = bm.get_active_real_positions()
                     current_symbols = {p["symbol"] for p in current_positions}
                     
+                    # Get self-learned adaptive params for TP/SL/confidence
+                    adaptive = tmem.get_adaptive_params()
+                    learned_tp = adaptive.get("tp_pct", 0.018)
+                    learned_sl = adaptive.get("sl_pct", 0.008)
+                    learned_trailing = adaptive.get("trailing_dist_pct", 0.008)
+                    
                     try:
                         bal_info = exchange_connector.get_account_balance()
                         free_usdt = float(bal_info.get("USDT", {}).get("free", 0.0) or 0.0)
@@ -1785,6 +1851,7 @@ async def swarm_trading_loop():
                             if trade_size_usd >= 1.05:
                                 candidate_pairs = ["DOGE/USDT", "PEPE/USDT", "SHIB/USDT", "BONK/USDT", "WIF/USDT"]
                                 best_real_opp = None
+                                best_features = None
                                 for cp in candidate_pairs:
                                     if cp in current_symbols:
                                         continue  # Already holding this pair!
@@ -1795,13 +1862,41 @@ async def swarm_trading_loop():
                                         s_inst = pair_streamers.get(cp) or DataStreamer(symbol=cp, timeframe="1m")
                                         df = s_inst.fetch_historical_data(limit=60)
                                         ml_sig, ml_cf = strategy.generate_signals(df)
+                                        
                                         if ml_sig == "BUY" and ml_cf >= 0.70:
-                                            best_real_opp = (cp, cp_price, ml_cf)
+                                            # Extract market features for self-learning memory
+                                            feat_df = strategy._compute_features(df)
+                                            feat_df.dropna(inplace=True)
+                                            if not feat_df.empty:
+                                                latest_feats = feat_df.iloc[-1]
+                                                entry_features = {
+                                                    "rsi_14": float(latest_feats.get("rsi_14", 0)),
+                                                    "bb_position": float(latest_feats.get("bb_position", 0)),
+                                                    "vol_ratio": float(latest_feats.get("vol_ratio", 0)),
+                                                    "natr_14": float(latest_feats.get("natr_14", 0)),
+                                                    "log_ret_5": float(latest_feats.get("log_ret_5", 0)),
+                                                    "dist_ema_50_pct": float(latest_feats.get("dist_ema_50_pct", 0)),
+                                                    "ml_confidence": ml_cf
+                                                }
+                                            else:
+                                                entry_features = {"ml_confidence": ml_cf}
+                                            
+                                            # Self-learning adaptive gate: check coin reputation + learned thresholds
+                                            should_trade, gate_reason = tmem.should_take_trade(cp, ml_cf, entry_features)
+                                            if not should_trade:
+                                                print(f"[SelfLearn] Skipping {cp}: {gate_reason}")
+                                                continue
+                                            
+                                            # Blend confidence with self-learned outcome model
+                                            blended_cf = tmem.get_blended_confidence(ml_cf, entry_features)
+                                            
+                                            best_real_opp = (cp, cp_price, blended_cf)
+                                            best_features = entry_features
                                             break
                                     except Exception:
                                         continue
 
-                                if best_real_opp:
+                                if best_real_opp and best_features:
                                     r_pair, r_price, r_conf = best_real_opp
                                     buy_res = exchange_connector.place_market_order(
                                         symbol=r_pair,
@@ -1810,28 +1905,45 @@ async def swarm_trading_loop():
                                     )
                                     if buy_res.get('success'):
                                         fill_p = float(buy_res.get('price', r_price))
-                                        # Fast micro-scalping targets (+1.8% TP, -0.8% Trailing SL gap)
-                                        target_price = fill_p * 1.018
-                                        stop_price = fill_p * (1.0 - 0.008)
+                                        # Use self-learned adaptive TP/SL parameters
+                                        target_price = fill_p * (1.0 + learned_tp)
+                                        stop_price = fill_p * (1.0 - learned_sl)
+                                        
+                                        # Record entry in self-learning trade memory
+                                        mem_trade_id = None
+                                        try:
+                                            mem_trade_id = tmem.record_entry(
+                                                symbol=r_pair, entry_price=fill_p,
+                                                cost_usd=trade_size_usd, ml_confidence=r_conf,
+                                                market_features_dict=best_features
+                                            )
+                                        except Exception as mem_err:
+                                            print(f"[TradeMemory] Entry record error: {mem_err}")
+                                        
                                         new_pos = {
                                             "symbol": r_pair,
                                             "entry_price": fill_p,
                                             "cost_usd": trade_size_usd,
                                             "target_price": target_price,
                                             "stop_loss_price": stop_price,
-                                            "tp_pct": 0.018,
-                                            "sl_pct": 0.008,
-                                            "trailing_dist_pct": 0.008,
+                                            "tp_pct": learned_tp,
+                                            "sl_pct": learned_sl,
+                                            "trailing_dist_pct": learned_trailing,
                                             "highest_price": fill_p,
+                                            "lowest_price": fill_p,
                                             "opened_at": datetime.now(timezone.utc).isoformat(),
                                             "trailing_stop_active": False,
-                                            "status": "HOLDING"
+                                            "status": "HOLDING",
+                                            "memory_trade_id": mem_trade_id
                                         }
                                         bm.add_real_position(new_pos)
+                                        tp_display = round(learned_tp * 100, 1)
+                                        sl_display = round(learned_sl * 100, 1)
                                         entry_log = (
                                             f"🚀 REAL SPOT BUY [{len(bm.get_active_real_positions())}/{bm.MAX_CONCURRENT_REAL_POSITIONS}]: "
                                             f"{r_pair} @ ${fill_p:.8f} (${trade_size_usd} USDT deployed). "
-                                            f"Target: ${target_price:.8f} (+1.8%) | Trailing SL: ${stop_price:.8f} (-0.8%)"
+                                            f"Target: ${target_price:.8f} (+{tp_display}%) | Trailing SL: ${stop_price:.8f} (-{sl_display}%) "
+                                            f"[🧠 Self-Learn: Trade #{mem_trade_id}]"
                                         )
                                         for conn in list(active_connections):
                                             try:
@@ -1955,6 +2067,25 @@ async def swarm_trading_loop():
                         await conn.send_json({"swarm_status": summary})
                     except Exception:
                         pass
+
+            # 🧠 Periodic Self-Learning Adaptation & Retraining Cycle (~every 60 ticks)
+            if loop_tick % 60 == 0:
+                try:
+                    adapt_res = tmem.analyze_and_adapt()
+                    if adapt_res.get("status") == "Adapted":
+                        print(f"[SelfLearn] Periodic adaptation completed: {adapt_res.get('changes')}")
+                        for conn in list(active_connections):
+                            try:
+                                await conn.send_json({
+                                    "log": f"🧠 SELF-LEARNING ADAPTATION: {', '.join(adapt_res.get('changes', []))}",
+                                    "self_learning_update": True
+                                })
+                            except Exception:
+                                pass
+                    if tmem.total_completed_trades() >= 15:
+                        tmem.retrain_outcome_model()
+                except Exception as sl_err:
+                    print(f"[SelfLearn Loop Error] {sl_err}")
 
             await asyncio.sleep(bot_speed_seconds)
 

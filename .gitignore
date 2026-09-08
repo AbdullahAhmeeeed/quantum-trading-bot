@@ -4,6 +4,7 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
+*.db
 *.db-shm
 *.db-wal
 node_modules/
