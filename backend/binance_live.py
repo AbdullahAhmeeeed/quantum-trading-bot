@@ -68,7 +68,11 @@ class BinanceExchangeConnector:
         try:
             balance = self.exchange.fetch_balance({'type': 'spot'})
             usdt = balance.get('USDT', {}).get('free', 0) or balance.get('USD', {}).get('free', 0)
+            fdusd = balance.get('FDUSD', {}).get('free', 0)
             btc = balance.get('BTC', {}).get('free', 0)
+            
+            # Combine USDT + FDUSD as usable stable balance
+            total_stable = float(usdt or 0.0) + float(fdusd or 0.0)
             
             # Check permissions if available
             safety_warning = None
@@ -83,6 +87,8 @@ class BinanceExchangeConnector:
                 'mode': 'LIVE' if self.is_live else 'TESTNET',
                 'exchange': self.get_exchange_name(),
                 'usdt_balance': float(usdt or 0.0),
+                'fdusd_balance': float(fdusd or 0.0),
+                'total_stable_balance': round(total_stable, 4),
                 'btc_balance': float(btc or 0.0),
                 'max_trade_cap_usd': self.max_trade_cap_usd,
                 'safety_warning': safety_warning,
@@ -145,6 +151,17 @@ class BinanceExchangeConnector:
         try:
             if not self.markets_loaded:
                 self._load_markets_safely()
+
+            # Auto-route to zero-fee FDUSD pair if user holds FDUSD and FDUSD pair exists
+            bal = self.exchange.fetch_balance({'type': 'spot'})
+            fdusd_free = float(bal.get('FDUSD', {}).get('free', 0.0) or 0.0)
+            usdt_free = float(bal.get('USDT', {}).get('free', 0.0) or 0.0)
+            
+            if symbol.endswith('/USDT') and fdusd_free >= 1.0 and fdusd_free > usdt_free:
+                base = symbol.split('/')[0]
+                fdusd_pair = f"{base}/FDUSD"
+                if fdusd_pair in self.exchange.markets:
+                    symbol = fdusd_pair
 
             price = self.get_price(symbol)
             if price <= 0:

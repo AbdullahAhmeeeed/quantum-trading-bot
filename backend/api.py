@@ -1103,6 +1103,8 @@ def get_live_wallet_balance():
         "mode": status.get("mode", EXCHANGE_CONFIG.get("environment", "TESTNET")),
         "exchange": status.get("exchange", "Binance"),
         "usdt_balance": status.get("usdt_balance", 0.0),
+        "fdusd_balance": status.get("fdusd_balance", 0.0),
+        "total_stable_balance": status.get("total_stable_balance", status.get("usdt_balance", 0.0)),
         "btc_balance": status.get("btc_balance", 0.0),
         "max_trade_cap_usd": getattr(active_engine, "max_trade_cap_usd", 10.0),
         "assets": balances,
@@ -1369,7 +1371,7 @@ def allocate_swarm_real_money(req: SwarmRealMoneyRequest):
 
     try:
         status = active_engine.test_connection()
-        usdt_bal = status.get('usdt_balance', 0.0)
+        usdt_bal = float(status.get('total_stable_balance', status.get('usdt_balance', 0.0)) or 0.0)
     except Exception:
         usdt_bal = 4.06
 
