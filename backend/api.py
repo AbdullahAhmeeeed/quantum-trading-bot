@@ -654,8 +654,19 @@ def safe_record_trade_exit(symbol: str, mem_id: Optional[int], exit_price: float
                 if row:
                     mem_id = row['id']
         if mem_id:
-            tmem.record_exit(mem_id, exit_price, exit_reason, highest_price=highest_p, lowest_price=lowest_p)
+            exit_res = tmem.record_exit(mem_id, exit_price, exit_reason, highest_price=highest_p, lowest_price=lowest_p)
             print(f"[TradeMemory] Successfully logged exit for {symbol} (Trade #{mem_id}) -> {exit_reason}")
+            if exit_res:
+                active_bots = bm.get_active_bots()
+                if active_bots:
+                    bm.update_bot_trade(
+                        bot_id=active_bots[0]["id"],
+                        pnl_delta=float(exit_res.get("pnl_usd", 0.0) or 0.0),
+                        pair=symbol,
+                        signal="BUY",
+                        confidence=float(exit_res.get("entry_ml_confidence") or 0.85),
+                        trade_capital=float(exit_res.get("cost_usd") or 1.0)
+                    )
     except Exception as e:
         print(f"[TradeMemory] Safe exit record error: {e}")
 
@@ -1333,80 +1344,137 @@ def emergency_liquidate_all(db: Session = Depends(get_db)):
     }
 
 @app.get("/api/portfolio/history")
-def get_portfolio_history(db: Session = Depends(get_db)):
-    portfolio = db.query(models.Portfolio).filter(models.Portfolio.id == 1).first()
-    if not portfolio:
-        return {"trades": []}
-    trades = db.query(models.Trade).filter(models.Trade.portfolio_id == 1).order_by(models.Trade.id.desc()).limit(500).all()
-    
+def get_portfolio_history():
     from datetime import datetime, timezone
     now_utc = datetime.now(timezone.utc)
-    
+
+    # 1. Fetch real positions from trade_journal
+    with tmem.lock:
+        cur = tmem.conn.cursor()
+        cur.execute("SELECT * FROM trade_journal ORDER BY id DESC")
+        rows = [dict(r) for r in cur.fetchall()]
+
+    active_spots = {p["symbol"]: p for p in bm.get_active_real_positions()}
     result = []
-    for t in trades:
-        cost = t.amount * t.entry_price
-        pnl_pct = ((t.pnl or 0.0) / cost * 100.0) if cost > 0 else 0.0
-        
-        # Calculate duration
-        start_t = t.created_at
-        end_t = t.closed_at or now_utc
-        duration_sec = 0
+
+    for t in rows:
+        sym = t["symbol"]
+        is_open = (t.get("is_open") == 1)
+        cost_usd = float(t.get("cost_usd") or 1.0)
+        entry_price = float(t.get("entry_price") or 0.0)
+        exit_price = float(t.get("exit_price") or 0.0) if t.get("exit_price") is not None else None
+
+        # Calculate exact duration
+        start_str = t.get("opened_at")
+        duration_sec = int(t.get("duration_seconds") or 0)
         duration_str = "00m 00s"
-        try:
-            if start_t:
-                # Handle naive vs aware
-                if start_t.tzinfo is None:
-                    start_t = start_t.replace(tzinfo=timezone.utc)
-                if end_t.tzinfo is None:
-                    end_t = end_t.replace(tzinfo=timezone.utc)
-                diff = int((end_t - start_t).total_seconds())
-                duration_sec = max(0, diff)
-                mins, secs = divmod(duration_sec, 60)
-                hrs, mins = divmod(mins, 60)
-                if hrs > 0:
-                    duration_str = f"{hrs}h {mins:02d}m"
-                else:
-                    duration_str = f"{mins:02d}m {secs:02d}s"
-        except Exception:
-            duration_str = "02m 15s"
 
-        exit_px = t.exit_price
-        if not exit_px and t.status == "CLOSED" and t.pnl:
-            exit_px = t.entry_price + (t.pnl / t.amount) if t.side == "BUY" else t.entry_price - (t.pnl / t.amount)
+        if is_open and start_str:
+            try:
+                dt_start = datetime.fromisoformat(start_str)
+                if dt_start.tzinfo is None:
+                    dt_start = dt_start.replace(tzinfo=timezone.utc)
+                duration_sec = max(0, int((now_utc - dt_start).total_seconds()))
+            except Exception:
+                duration_sec = 0
 
-        exit_reason = "ACTIVE (Running)"
-        if t.status == "CLOSED":
-            if t.pnl and t.pnl > 0:
-                exit_reason = "Take Profit Target"
-            else:
-                exit_reason = "Trailing Stop Loss"
+        mins, secs = divmod(duration_sec, 60)
+        hrs, mins = divmod(mins, 60)
+        if hrs > 0:
+            duration_str = f"{hrs}h {mins:02d}m {secs:02d}s"
+        else:
+            duration_str = f"{mins:02d}m {secs:02d}s"
+
+        if is_open:
+            spot_info = active_spots.get(sym)
+            live_price = float(spot_info.get("current_price", 0.0)) if spot_info else 0.0
+            if live_price <= 0:
+                try:
+                    live_price = exchange_connector.get_price(sym) if exchange_connector else entry_price
+                except Exception:
+                    live_price = entry_price
+
+            pnl_pct = ((live_price - entry_price) / entry_price * 100.0) if entry_price > 0 else 0.0
+            pnl_usd = cost_usd * (pnl_pct / 100.0)
+            status_str = "OPEN"
+            exit_reason = "🟢 ACTIVE (Running - Trailing Active)"
+            exit_display = live_price
+            closed_at_str = None
+        else:
+            status_str = "CLOSED"
+            pnl_pct = float(t.get("pnl_pct") or 0.0)
+            pnl_usd = float(t.get("pnl_usd") or 0.0)
+            exit_reason = t.get("exit_reason") or "CLOSED"
+            exit_display = exit_price
+            closed_at_str = t.get("closed_at")
+
+        amount = round(cost_usd / entry_price, 4) if entry_price > 0 else 0.0
 
         result.append({
-            "id": t.id,
-            "symbol": t.symbol,
-            "side": t.side,
-            "amount": round(t.amount, 4),
-            "entry_price": round(t.entry_price, 2),
-            "exit_price": round(exit_px, 2) if exit_px else None,
-            "stop_loss": round(t.stop_loss, 2) if t.stop_loss else None,
-            "take_profit": round(t.take_profit, 2) if t.take_profit else None,
-            "status": t.status,
-            "pnl": round(t.pnl or 0.0, 2),
+            "id": t["id"],
+            "symbol": sym,
+            "side": t.get("side", "BUY"),
+            "amount": amount,
+            "entry_price": entry_price,
+            "exit_price": exit_display,
+            "cost_usd": round(cost_usd, 4),
+            "status": status_str,
+            "pnl": round(pnl_usd, 6),
             "pnl_percent": round(pnl_pct, 2),
             "duration_seconds": duration_sec,
             "duration_formatted": duration_str,
             "exit_reason": exit_reason,
-            "created_at": str(t.created_at),
-            "closed_at": str(t.closed_at) if t.closed_at else None
+            "created_at": t.get("opened_at"),
+            "closed_at": closed_at_str,
+            "entry_rsi": round(float(t.get("entry_rsi") or 0.0), 1) if t.get("entry_rsi") is not None else None,
+            "entry_confidence": round(float(t.get("entry_ml_confidence") or 0.0), 2) if t.get("entry_ml_confidence") is not None else None,
         })
 
     return {"trades": result}
 
 @app.get("/api/portfolio/analytics")
-def get_portfolio_analytics(db: Session = Depends(get_db)):
-    from analytics import calculate_portfolio_analytics
-    stats = calculate_portfolio_analytics(db, 1)
-    return stats
+def get_portfolio_analytics():
+    perf = tmem.get_performance_summary()
+    total_trades = perf.get("total_trades", 0)
+    wins = perf.get("total_wins", 0)
+    losses = perf.get("total_losses", 0)
+    win_rate = perf.get("overall_win_rate", 0.0)
+    total_pnl = perf.get("total_pnl_usd", 0.0)
+
+    # Compute gross profit and loss from completed trades
+    with tmem.lock:
+        cur = tmem.conn.cursor()
+        cur.execute("SELECT pnl_usd FROM trade_journal WHERE is_open = 0")
+        pnl_list = [float(r["pnl_usd"] or 0.0) for r in cur.fetchall()]
+
+    gross_profit = sum(p for p in pnl_list if p > 0)
+    gross_loss = abs(sum(p for p in pnl_list if p < 0))
+    profit_factor = round(gross_profit / gross_loss, 2) if gross_loss > 0 else (99.0 if gross_profit > 0 else 1.0)
+
+    avg_dur = perf.get("avg_duration_seconds", 0) or 0
+    dm, ds = divmod(int(avg_dur), 60)
+    dh, dm = divmod(dm, 60)
+    avg_dur_str = f"{dh}h {dm:02d}m {ds:02d}s" if dh > 0 else f"{dm:02d}m {ds:02d}s"
+
+    return {
+        "total_trades": total_trades,
+        "open_trades": perf.get("open_trades", 0),
+        "winning_trades": wins,
+        "losing_trades": losses,
+        "win_rate": round(win_rate, 2),
+        "net_pnl_usd": round(total_pnl, 6),
+        "gross_profit": round(gross_profit, 6),
+        "gross_loss": round(gross_loss, 6),
+        "profit_factor": profit_factor,
+        "avg_pnl_pct": round(perf.get("avg_pnl_pct", 0.0) or 0.0, 2),
+        "avg_duration_seconds": int(avg_dur),
+        "avg_duration_formatted": avg_dur_str,
+        "best_trade": perf.get("best_trade"),
+        "worst_trade": perf.get("worst_trade"),
+        "exit_breakdown": perf.get("exit_reason_breakdown", {}),
+        "coin_reputations": perf.get("coin_reputations", []),
+        "adaptive_params": perf.get("adaptive_params", {}),
+    }
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -2120,108 +2188,28 @@ async def swarm_trading_loop():
                         print(f"[Real Spot Entry Error] {enter_err}")
 
             # ─────────────────────────────────────────────────────────────────
-            # SIMULATION / PAPER SWARM ENGINE (Runs when real money is idle)
+            # REAL SPOT BOT SYNCHRONIZATION & CONTINUOUS MONITORING
             # ─────────────────────────────────────────────────────────────────
-            # Scan opportunities for simulated swarm bots
-            min_opp_score = 35
-            best_opp = next((o for o in opportunities if o["signal"] in ["BUY", "SELL"] and o["score"] >= min_opp_score), None)
-
-            active_bots = bm.get_active_bots()
-            if not active_bots:
-                await asyncio.sleep(2)
-                continue
-
-            for bot in active_bots:
-                bot_id = bot["id"]
-                if not best_opp:
-                    with bm.swarm_lock:
-                        if bot_id in bm.swarm_bots:
-                            bm.swarm_bots[bot_id]["thought"] = f"Scanning {len(SWARM_TRADING_UNIVERSE)} coins for 70%+ confluence setups. Bal: ${bot['current_balance']:.2f}"
-                    continue
-
-                pair = best_opp["pair"]
-                signal = best_opp["signal"]
-                current_price = best_opp["price"]
-                opp_score = best_opp["score"]
-                if current_price <= 0:
-                    continue
-
-                # ML signal confluence
-                try:
-                    s_inst = pair_streamers.get(pair) or DataStreamer(symbol=pair, timeframe="1m")
-                    df = s_inst.fetch_historical_data(limit=60)
-                    ml_signal, ml_conf = strategy.generate_signals(df)
-                    combined_conf = (opp_score / 100.0 * 0.4) + (ml_conf * 0.6)
-                    if ml_signal == "HOLD":
-                        combined_conf *= 0.65
-                    final_signal = signal if combined_conf >= 0.48 else "HOLD"
-                except Exception:
-                    combined_conf = opp_score / 100.0
-                    final_signal = signal if combined_conf >= 0.70 else "HOLD"
-
-                if final_signal == "HOLD":
-                    with bm.swarm_lock:
-                        if bot_id in bm.swarm_bots:
-                            bm.swarm_bots[bot_id]["thought"] = f"Analyzing {pair}... Edge {combined_conf*100:.0f}% < 70% threshold. Capital preserved. Monitoring..."
-                    continue
-
-                # Sizing & simulated win
-                cur_bal = bot["current_balance"]
-                risk_pct = 0.010
-                trade_capital = max(cur_bal * risk_pct, 0.05)
-                sl_pct = 0.012
-                tp_pct = 0.030
-                fee_buffer = 0.0008
-
-                win_prob = min(combined_conf + 0.02, 0.74)
-                won = random.random() < win_prob
-                raw_pnl = trade_capital * (tp_pct if won else -sl_pct)
-                pnl = round(raw_pnl - (trade_capital * fee_buffer), 4)
-
-                # Update bot state & record trade in audit ledger
-                bm.update_bot_trade(bot_id, pnl, pair, final_signal, combined_conf, trade_capital=trade_capital)
-
-                # Broadcast trade log to UI
-                updated_bot = bm.swarm_bots.get(bot_id, {})
-                outcome_tag = "WIN" if won else "LOSS"
-                log_msg = (
-                    f"[{bot_id} | {outcome_tag}] {pair} {final_signal} | "
-                    f"Risk: ${trade_capital:.2f} | "
-                    f"PnL: {('+' if pnl > 0 else '')}${pnl:.4f} | "
-                    f"Bal: ${updated_bot.get('current_balance', 0):.2f} | "
-                    f"Daily PnL: ${updated_bot.get('daily_pnl', 0):.2f}/$100 | "
-                    f"Conf: {combined_conf*100:.0f}%"
-                )
-                for conn in list(active_connections):
-                    try:
-                        await conn.send_json({"log": log_msg, "swarm_update": True})
-                    except Exception:
-                        pass
-
-                # Check if bot died from this trade
-                if updated_bot.get("status") == "DEAD":
-                    death_msg = f"💀 BOT {bot_id} ELIMINATED! Reason: {updated_bot.get('death_reason', 'Liquidated')}"
-                    print(f"[SwarmEngine] {death_msg}")
-                    for conn in list(active_connections):
-                        try:
-                            await conn.send_json({"log": death_msg, "bot_died": True})
-                        except Exception:
-                            pass
-
-                # Check if bot hit the $100 survival goal -> SPAWN 9 CLONES!
-                if bm.check_target_hit(bot_id):
-                    children = bm.spawn_children(bot_id)
-                    spawn_msg = (
-                        f"🏆 SURVIVAL GOAL ACHIEVED! BOT {bot_id} HIT $100 PROFIT! "
-                        f"Spawning {len(children)} clone bots ($10 each). "
-                        f"Generation {bm.swarm_stats['swarm_generation']} ACTIVE!"
-                    )
-                    print(f"[SwarmEngine] {spawn_msg}")
-                    for conn in list(active_connections):
-                        try:
-                            await conn.send_json({"log": spawn_msg, "spawn_event": True, "children_spawned": len(children)})
-                        except Exception:
-                            pass
+            # Ensure primary bot purely mirrors REAL Binance Spot executions & true PnL
+            active_spots = bm.get_active_real_positions()
+            real_perf = tmem.get_performance_summary()
+            with bm.swarm_lock:
+                active_bots = [b for b in bm.swarm_bots.values() if b["status"] == bm.STATUS_ACTIVE]
+                if active_bots:
+                    pb = active_bots[0]
+                    pb["trades_today"] = real_perf.get("total_trades", 0)
+                    pb["winning_trades"] = real_perf.get("total_wins", 0)
+                    pb["losing_trades"] = real_perf.get("total_losses", 0)
+                    pb["daily_pnl"] = round(real_perf.get("total_pnl_usd", 0.0) or 0.0, 4)
+                    if active_spots:
+                        pos_summary = ", ".join([f"{p['symbol']} ({'+' if p.get('unrealized_pnl_pct', 0) >= 0 else ''}{p.get('unrealized_pnl_pct', 0):.2f}%)" for p in active_spots])
+                        pb["thought"] = f"🟢 REAL SPOT ACTIVE [{len(active_spots)}/{bm.MAX_CONCURRENT_REAL_POSITIONS}]: {pos_summary} | Dynamic Trailing Active"
+                        pb["active_pair"] = active_spots[0]["symbol"]
+                    else:
+                        top_opp = opportunities[0] if opportunities else None
+                        top_info = f" | Top candidate: {top_opp['pair']} (Score: {top_opp['score']})" if top_opp else ""
+                        pb["thought"] = f"🔍 SCANNING {len(SWARM_TRADING_UNIVERSE)} COINS for 4/5 Confluence setups on Binance Spot{top_info}. 100% Real Trades Only."
+                        pb["active_pair"] = None
 
             # Broadcast full swarm status every 3 ticks
             if loop_tick % 3 == 0:

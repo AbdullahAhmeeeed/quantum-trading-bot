@@ -223,6 +223,46 @@ body {
   background: rgba(255, 255, 255, 0.025);
 }
 
+/* Scrollable Ledger Container with Sticky Header */
+.scrollable-ledger-container {
+  max-height: 560px;
+  overflow-y: auto;
+  overflow-x: auto;
+  position: relative;
+  border-radius: 16px;
+  background: rgba(13, 17, 26, 0.6);
+  border: 1px solid var(--border-subtle);
+  box-shadow: 0 10px 35px rgba(0, 0, 0, 0.4);
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 240, 255, 0.3) rgba(13, 17, 26, 0.8);
+}
+
+.scrollable-ledger-container::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.scrollable-ledger-container::-webkit-scrollbar-track {
+  background: rgba(13, 17, 26, 0.8);
+}
+
+.scrollable-ledger-container::-webkit-scrollbar-thumb {
+  background: rgba(0, 240, 255, 0.3);
+  border-radius: 4px;
+}
+
+.scrollable-ledger-container::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 240, 255, 0.6);
+}
+
+.scrollable-ledger-container thead th {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: #0d1322 !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+}
+
 /* Apple Buttons */
 .btn-primary {
   background: linear-gradient(135deg, #00f0ff 0%, #00a8ff 100%);

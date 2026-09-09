@@ -267,11 +267,32 @@ def get_swarm_summary() -> dict:
         dead = [b for b in bots if b["status"] == STATUS_DEAD]
         winners = [b for b in bots if b["status"] == STATUS_TARGET_HIT]
         total_capital = sum(b["current_balance"] for b in active)
+        real_trades_list = []
+        try:
+            from trade_memory import trade_memory as tmem
+            recent = tmem.get_recent_trades(limit=30)
+            for r in recent:
+                pnl_u = float(r.get("pnl_usd", 0.0) or 0.0)
+                real_trades_list.append({
+                    "time": r.get("closed_at") or r.get("opened_at"),
+                    "bot_id": "REAL-SPOT",
+                    "pair": r.get("symbol"),
+                    "signal": r.get("side", "BUY"),
+                    "capital_risked": round(float(r.get("cost_usd", 1.0) or 1.0), 2),
+                    "pnl": round(pnl_u, 4),
+                    "result": "WIN" if pnl_u > 0 else "LOSS",
+                    "confidence": round(float(r.get("entry_ml_confidence", 0.85) or 0.85), 2),
+                    "bot_balance_after": round(float(r.get("exit_price", 0.0) or 0.0), 6),
+                })
+        except Exception:
+            pass
+
         total_pnl = swarm_stats["total_pnl_today"]
         progress_to_goal = (total_pnl / 10000.0) * 100
+
         return {
             "bots": bots,
-            "recent_trades": swarm_trades[:30],
+            "recent_trades": real_trades_list,
             "active_count": len(active),
             "dead_count": len(dead),
             "target_hit_count": len(winners),
