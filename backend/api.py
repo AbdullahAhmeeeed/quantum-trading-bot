@@ -254,6 +254,7 @@ pair_streamers = {
     pair: DataStreamer(symbol=pair, timeframe="1m")
     for pair in ALL_STREAM_PAIRS
 }
+symbol_cooldowns: Dict[str, float] = {}  # symbol -> epoch timestamp when cool-down expires
 
 # Live high-frequency candle state for all pairs
 def _init_candle(price: float) -> dict:
@@ -663,6 +664,7 @@ def safe_record_trade_exit(symbol: str, mem_id: Optional[int], exit_price: float
         if mem_id:
             exit_res = tmem.record_exit(mem_id, exit_price, exit_reason, highest_price=highest_p, lowest_price=lowest_p)
             print(f"[TradeMemory] Successfully logged exit for {symbol} (Trade #{mem_id}) -> {exit_reason}")
+            symbol_cooldowns[symbol] = time.time() + 180  # 3-minute cooldown to prevent instant churning
             if exit_res:
                 active_bots = bm.get_active_bots()
                 if active_bots:
@@ -2030,6 +2032,24 @@ async def swarm_trading_loop():
                         except Exception:
                             pass
 
+                    # A2. Guaranteed Breakeven Profit Lock (+0.35% profit moves SL to entry)
+                    if pnl_pct >= 0.35 and not updated_pos.get("breakeven_locked"):
+                        be_stop = entry_p * 1.0005  # Covers entry and tiny buffer
+                        if be_stop > stop_p:
+                            updated_pos["stop_loss_price"] = be_stop
+                            updated_pos["breakeven_locked"] = True
+                            stop_p = be_stop
+                            be_msg = f"🛡️ BREAKEVEN PROTECTED on {sym}! Stop-Loss locked at entry (${be_stop:.8f}). Zero downside risk!"
+                            with bm.swarm_lock:
+                                owner_b = active_real_pos.get("bot_id") or bot_id
+                                if owner_b in bm.swarm_bots:
+                                    bm.swarm_bots[owner_b]["thought"] = be_msg
+                            for conn in list(active_connections):
+                                try:
+                                    await conn.send_json({"log": be_msg, "swarm_update": True})
+                                except Exception:
+                                    pass
+
                     # B. Instant Quick-Profit Lock on Momentum Stall (+0.50% to +0.80%)
                     # If in healthy scalp profit but NOT in runner breakout, lock profit if candle stalls!
                     should_quick_lock = False
@@ -2138,14 +2158,37 @@ async def swarm_trading_loop():
                                         pass
                             continue
 
-                    # E. Stagnation check: Reduced from 25m to 15m to prevent dead capital
+                    # E. Smart Trend-Aware Stagnation Engine (45 minutes, with momentum & trend preservation)
                     is_stagnant = False
+                    stag_reason = ""
                     opened_at_str = updated_pos.get("opened_at")
                     if opened_at_str:
                         try:
                             opened_time = datetime.fromisoformat(opened_at_str)
-                            if (now_utc - opened_time).total_seconds() > 900 and abs(pnl_pct) < 0.35:
-                                is_stagnant = True
+                            hold_secs = (now_utc - opened_time).total_seconds()
+                            # Only evaluate stagnation after 45 minutes (2700s)
+                            if hold_secs >= 2700 and abs(pnl_pct) < 0.60:
+                                try:
+                                    s_inst = pair_streamers.get(sym) or DataStreamer(symbol=sym, timeframe="1m")
+                                    pos_df = s_inst.fetch_historical_data(limit=30)
+                                    c_eval = chart_reader.analyze_chart(pos_df)
+                                    m_metrics = c_eval.get('metrics', {})
+                                    ema_21 = float(m_metrics.get('ema_21', 0.0) or 0.0)
+                                    macd_hist = float(m_metrics.get('macd_hist', 0.0) or 0.0)
+                                    rsi_val = float(m_metrics.get('rsi', 50.0) or 50.0)
+                                    
+                                    # If price is above 21-EMA and MACD is bullish, give the wave room to complete!
+                                    if live_p >= (ema_21 * 0.998) and macd_hist >= 0:
+                                        is_stagnant = False  # Trend is still healthy, do not dump!
+                                    elif macd_hist < 0 or rsi_val < 42:
+                                        is_stagnant = True
+                                        stag_reason = f"Momentum exhausted (MACD negative, RSI {rsi_val:.0f}) after {int(hold_secs/60)}m"
+                                    else:
+                                        is_stagnant = True
+                                        stag_reason = f"Sideways flat range over {int(hold_secs/60)}m"
+                                except Exception:
+                                    is_stagnant = True
+                                    stag_reason = f"45m holding limit reached"
                         except Exception:
                             pass
 
@@ -2159,7 +2202,7 @@ async def swarm_trading_loop():
                                                    highest_p=updated_pos.get("highest_price"),
                                                    lowest_p=updated_pos.get("lowest_price", entry_p))
                             bm.remove_real_position(sym)
-                            stag_msg = f"⏰ 25-MIN STAGNATION TIMEOUT: Sold {sym} @ ${live_p:.8f} ({pnl_pct:+.2f}%) to free slot for high-velocity coins."
+                            stag_msg = f"⏰ 45-MIN SMART STAGNATION EXIT: Sold {sym} @ ${live_p:.8f} ({pnl_pct:+.2f}%) | {stag_reason}"
                             with bm.swarm_lock:
                                 if owner_bot in bm.swarm_bots:
                                     bm.swarm_bots[owner_bot]["thought"] = stag_msg
@@ -2228,6 +2271,8 @@ async def swarm_trading_loop():
                                 for cp in candidate_pairs:
                                     if cp in current_symbols:
                                         continue  # Already holding this pair!
+                                    if symbol_cooldowns.get(cp, 0) > time.time():
+                                        continue  # In 3-minute post-trade cool-down to prevent churn!
                                     cp_price = live_prices.get(cp, 0.0)
                                     if cp_price <= 0:
                                         continue
@@ -2242,20 +2287,23 @@ async def swarm_trading_loop():
                                         vol_r = float(chart_analysis.get('metrics', {}).get('vol_ratio', 1.0) or 1.0)
                                         is_green_c = bool(chart_analysis.get('metrics', {}).get('is_green', False))
                                         
-                                        # Bot 1 (Sniper): requires 4/5 confluence
-                                        is_sniper_approved = (chart_analysis.get('signal') == 'BUY' and c_score >= 4)
+                                        # 🛡️ STRICT VOLUME SURGE GUARD: Never enter on dry / dead volume!
+                                        if vol_r < 1.20:
+                                            continue
+
+                                        # Bot 1 (Sniper): requires 4/5 confluence & volume surge
+                                        is_sniper_approved = (chart_analysis.get('signal') == 'BUY' and c_score >= 4 and vol_r >= 1.20)
                                         
-                                        # Bot 2 (Alpha Hunter): High-velocity breakout scalper
+                                        # Bot 2 (Alpha Hunter): High-velocity volume breakout scalper
                                         is_alpha_approved = (
-                                            (c_score >= 2 and (sent_val >= 0.0 or vol_r >= 1.05 or is_green_c)) or
-                                            (c_score >= 3)
+                                            c_score >= 3 and vol_r >= 1.25 and (sent_val >= 0.0 or is_green_c)
                                         )
 
                                         target_bot_id = None
                                         target_bot_name = None
                                         target_size = 0.0
 
-                                        # Alpha Hunter prioritized for user's $1.20 USDT allocation
+                                        # Priority allocation based on available funds
                                         if is_alpha_approved and b2_bal >= 1.05 and free_usdt >= 1.05:
                                             target_bot_id = "BOT-002-ALPHA"
                                             target_bot_name = "Alpha Hunter #2 (Momentum Scalp)"
@@ -2269,9 +2317,9 @@ async def swarm_trading_loop():
                                             continue
 
                                         ml_sig, ml_cf = strategy.generate_signals(df)
-                                        min_cf = 0.65 if target_bot_id == "BOT-002-ALPHA" else 0.70
+                                        min_cf = 0.70  # Strict 70%+ confidence for BOTH bots!
                                         
-                                        if (ml_sig in ["BUY", "HOLD"] or target_bot_id == "BOT-002-ALPHA") and ml_cf >= min_cf:
+                                        if (ml_sig in ["BUY", "HOLD"] or c_score >= 4) and ml_cf >= min_cf:
                                             # Extract market features for self-learning memory
                                             feat_df = strategy._compute_features(df)
                                             feat_df.dropna(inplace=True)
@@ -2291,8 +2339,8 @@ async def swarm_trading_loop():
                                             
                                             # Self-learning adaptive gate: check coin reputation + learned thresholds
                                             should_trade, gate_reason = tmem.should_take_trade(cp, ml_cf, entry_features)
-                                            if not should_trade and target_bot_id == "BOT-001-SNIPER":
-                                                print(f"[SelfLearn] Skipping {cp}: {gate_reason}")
+                                            if not should_trade:
+                                                print(f"[SelfLearn] Skipping {cp} for {target_bot_id}: {gate_reason}")
                                                 continue
                                             
                                             # Blend confidence with self-learned outcome model

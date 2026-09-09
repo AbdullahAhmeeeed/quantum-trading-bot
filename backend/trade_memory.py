@@ -402,8 +402,11 @@ class TradeMemory:
             open_count = cursor.fetchone()['c']
             
         total_trades = len(closed_trades)
-        wins = sum(1 for t in closed_trades if t['pnl_pct'] > 0)
-        losses = total_trades - wins
+        wins = sum(1 for t in closed_trades if t['pnl_pct'] > 0.10)
+        breakevens = sum(1 for t in closed_trades if -0.10 <= t['pnl_pct'] <= 0.10)
+        losses = sum(1 for t in closed_trades if t['pnl_pct'] < -0.10)
+        effective_decisions = wins + losses
+        adjusted_win_rate = (wins / effective_decisions * 100) if effective_decisions > 0 else ((wins / total_trades * 100) if total_trades > 0 else 0.0)
         overall_win_rate = (wins / total_trades * 100) if total_trades > 0 else 0.0
         
         total_pnl_usd = sum(t['pnl_usd'] for t in closed_trades)
@@ -427,7 +430,10 @@ class TradeMemory:
             'open_trades': open_count,
             'total_wins': wins,
             'total_losses': losses,
-            'overall_win_rate': overall_win_rate,
+            'breakeven_count': breakevens,
+            'adjusted_win_rate': round(adjusted_win_rate, 1),
+            'overall_win_rate': round(overall_win_rate, 1),
+            'capital_preservation_rate': round(((wins + breakevens) / total_trades * 100) if total_trades > 0 else 0.0, 1),
             'total_pnl_usd': total_pnl_usd,
             'avg_pnl_pct': avg_pnl_pct,
             'best_trade': best_trade,
