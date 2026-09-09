@@ -2186,6 +2186,7 @@ async def swarm_trading_loop():
 
                                 best_real_opp = None
                                 best_features = None
+                                opp_map = {o["pair"]: o for o in cached_opps} if cached_opps else {}
                                 loop = asyncio.get_event_loop()
                                 for cp in candidate_pairs:
                                     if cp in current_symbols:
@@ -2200,12 +2201,12 @@ async def swarm_trading_loop():
                                         # ─── DUAL-BOT MULTI-CONFLUENCE CHART READING ───────
                                         chart_analysis = chart_reader.analyze_chart(df)
                                         c_score = chart_analysis.get('confluence_score', 0)
-                                        sent_val = opp_map.get(cp, {}).get("sentiment_score", 0.0)
+                                        sent_val = float(opp_map.get(cp, {}).get("sentiment", opp_map.get(cp, {}).get("sentiment_score", 0.0)) or 0.0)
                                         
                                         # Bot 1 (Sniper): requires 4/5 confluence
                                         # Bot 2 (Alpha Hunter): allows 3/5 with volume or positive news
                                         is_sniper_approved = (chart_analysis.get('signal') == 'BUY' and c_score >= 4)
-                                        is_alpha_approved = (c_score >= 3 and (sent_val >= 0.10 or chart_analysis.get('vol_ratio', 1.0) >= 1.15))
+                                        is_alpha_approved = (c_score >= 3 and (sent_val >= 0.10 or chart_analysis.get('metrics', {}).get('vol_ratio', 1.0) >= 1.15))
                                         
                                         if not (is_sniper_approved or is_alpha_approved):
                                             continue
@@ -2242,7 +2243,8 @@ async def swarm_trading_loop():
                                             best_real_opp = (cp, cp_price, blended_cf, chart_analysis)
                                             best_features = entry_features
                                             break
-                                    except Exception:
+                                    except Exception as scan_err:
+                                        print(f"[CandidateScan] Error evaluating {cp}: {scan_err}")
                                         continue
 
                                 if best_real_opp and best_features:
