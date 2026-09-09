@@ -15,7 +15,7 @@ from typing import List, Dict, Optional
 
 swarm_bots: Dict[str, dict] = {}
 swarm_trades: List[dict] = []
-swarm_lock = threading.Lock()
+swarm_lock = threading.RLock()
 
 swarm_stats = {
     "total_bots_ever": 0,
@@ -309,6 +309,95 @@ def get_swarm_summary() -> dict:
         }
 
 
+def create_dual_bots():
+    """Initializes both Bot 1 (Conservative Sniper) and Bot 2 (Aggressive Alpha Hunter)."""
+    with swarm_lock:
+        now = datetime.now(timezone.utc)
+        deadline = now + timedelta(hours=SURVIVAL_DURATION_HOURS)
+        
+        bot_1 = {
+            "id": "BOT-001-SNIPER",
+            "bot_number": 1,
+            "bot_type": "CONSERVATIVE_SNIPER",
+            "display_name": "Sniper #1 (Conservative Institutional)",
+            "generation": 1,
+            "starting_capital": STARTING_CAPITAL,
+            "current_balance": STARTING_CAPITAL,
+            "daily_pnl": 0.0,
+            "daily_target": DAILY_TARGET_USD,
+            "status": STATUS_ACTIVE,
+            "survival_state": "HUNTING",
+            "active_pair": None,
+            "trades_today": 0,
+            "winning_trades": 0,
+            "losing_trades": 0,
+            "confluence_required": 4,
+            "min_sentiment": 0.0,
+            "risk_mode": "CONSERVATIVE",
+            "created_at": now.isoformat(),
+            "deadline_at": deadline.isoformat(),
+            "deadline_epoch": int(deadline.timestamp()),
+            "thought": "Hunting 4/5 confluence setups on major pairs (BTC, ETH, top alts). Strict capital preservation active."
+        }
+        
+        bot_2 = {
+            "id": "BOT-002-ALPHA",
+            "bot_number": 2,
+            "bot_type": "AGGRESSIVE_ALPHA",
+            "display_name": "Alpha Hunter #2 (Momentum & News Scalp)",
+            "generation": 1,
+            "starting_capital": STARTING_CAPITAL,
+            "current_balance": STARTING_CAPITAL,
+            "daily_pnl": 0.0,
+            "daily_target": DAILY_TARGET_USD,
+            "status": STATUS_ACTIVE,
+            "survival_state": "HUNTING",
+            "active_pair": None,
+            "trades_today": 0,
+            "winning_trades": 0,
+            "losing_trades": 0,
+            "confluence_required": 3,
+            "min_sentiment": 0.15,
+            "risk_mode": "AGGRESSIVE",
+            "created_at": now.isoformat(),
+            "deadline_at": deadline.isoformat(),
+            "deadline_epoch": int(deadline.timestamp()),
+            "thought": "Scanning universal meme & altcoin universe for breakout surges & positive news buzz. Fast compounding scalp mode."
+        }
+        
+        swarm_bots["BOT-001-SNIPER"] = bot_1
+        swarm_bots["BOT-002-ALPHA"] = bot_2
+        swarm_stats["active_bots"] = 2
+        return [bot_1, bot_2]
+
+
+def ensure_dual_bots():
+    with swarm_lock:
+        if "BOT-001-SNIPER" not in swarm_bots or "BOT-002-ALPHA" not in swarm_bots:
+            return create_dual_bots()
+        return [swarm_bots["BOT-001-SNIPER"], swarm_bots["BOT-002-ALPHA"]]
+
+
+def get_dual_bot_status() -> dict:
+    ensure_dual_bots()
+    with swarm_lock:
+        now_epoch = int(time.time())
+        res = []
+        for b_id in ["BOT-001-SNIPER", "BOT-002-ALPHA"]:
+            if b_id in swarm_bots:
+                b = dict(swarm_bots[b_id])
+                diff = max(0, b.get("deadline_epoch", 0) - now_epoch)
+                hrs, rem = divmod(diff, 3600)
+                mins, secs = divmod(rem, 60)
+                b["countdown"] = f"{hrs:02d}h {mins:02d}m {secs:02d}s"
+                res.append(b)
+        return {
+            "bots": res,
+            "active_positions": list(active_real_positions.values()),
+            "total_capital": sum(b.get("current_balance", 0.0) for b in res)
+        }
+
+
 def ensure_primary_bot():
     check_daily_deadlines()
     with swarm_lock:
@@ -317,7 +406,7 @@ def ensure_primary_bot():
             pass
         else:
             return active[0]
-    return create_primary_bot()
+    return ensure_dual_bots()[0]
 
 
 def set_primary_bot_capital(amount: float) -> dict:

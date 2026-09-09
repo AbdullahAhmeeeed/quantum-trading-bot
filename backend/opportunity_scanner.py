@@ -8,27 +8,33 @@ from typing import List, Dict, Optional
 import random
 
 TRADING_UNIVERSE = [
-    "BTC/USDT", "ETH/USDT", "BNB/USDT", "SOL/USDT",
-    "PAXG/USDT", "DOGE/USDT", "SHIB/USDT", "PEPE/USDT",
-    "WIF/USDT", "BONK/USDT", "XRP/USDT", "ADA/USDT",
-    "AVAX/USDT", "MATIC/USDT",
+    # Mega Caps & Store of Value
+    "BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT", "PAXG/USDT",
+    # Top Altcoins & High-Beta Layer 1s
+    "XRP/USDT", "ADA/USDT", "AVAX/USDT", "SUI/USDT", "NEAR/USDT", 
+    "APT/USDT", "LINK/USDT", "DOT/USDT", "LTC/USDT", "MATIC/USDT",
+    # AI & DeFi Leaders
+    "FET/USDT", "RENDER/USDT", "INJ/USDT", "AAVE/USDT", "UNI/USDT",
+    # High-Velocity Meme & Momentum Coins
+    "PEPE/USDT", "SHIB/USDT", "DOGE/USDT", "WIF/USDT", "BONK/USDT", 
+    "FLOKI/USDT", "NEIRO/USDT", "BOME/USDT"
 ]
 
 _opportunity_cache: Dict[str, dict] = {}
 _cache_lock = threading.Lock()
 _prev_prices: Dict[str, float] = {}
 
-MEME_COINS = {"DOGE/USDT", "SHIB/USDT", "PEPE/USDT", "WIF/USDT", "BONK/USDT"}
+MEME_COINS = {"DOGE/USDT", "SHIB/USDT", "PEPE/USDT", "WIF/USDT", "BONK/USDT", "FLOKI/USDT", "NEIRO/USDT", "BOME/USDT"}
 
 
 _price_history: Dict[str, list] = {}
 
 
-def _score_opportunity(pair: str, price: float, prev_price: float, volume: float) -> dict:
+def _score_opportunity(pair: str, price: float, prev_price: float, volume: float, sentiment_score: float = 0.0) -> dict:
     global _price_history
     if price <= 0:
         return {"pair": pair, "score": 5, "signal": "HOLD", "price": price, "reason": "No data",
-                "pct_change": 0.0, "volume": volume, "timestamp": int(time.time())}
+                "pct_change": 0.0, "volume": volume, "sentiment": 0.0, "timestamp": int(time.time())}
 
     if pair not in _price_history:
         _price_history[pair] = [price]
@@ -37,32 +43,32 @@ def _score_opportunity(pair: str, price: float, prev_price: float, volume: float
         if len(_price_history[pair]) > 10:
             _price_history[pair].pop(0)
 
-    # Calculate momentum against 5-tick lookback window for realistic trend detection
     baseline_price = _price_history[pair][0] if len(_price_history[pair]) >= 3 else prev_price
     if baseline_price <= 0:
         baseline_price = price
 
     pct_change = ((price - baseline_price) / baseline_price) * 100.0
 
-    # Dynamic momentum score (0 to 100)
+    # Institutional quantitative momentum score (0 to 100)
     base_score = 45.0
-    mom_boost = min(abs(pct_change) * 120.0, 40.0)
+    mom_boost = min(abs(pct_change) * 140.0, 35.0)
     vol_bonus = min(volume / 8.0, 15.0)
-    meme_bonus = 15.0 if pair in MEME_COINS else 5.0
+    meme_bonus = 12.0 if pair in MEME_COINS else 4.0
+    sentiment_bonus = max(-15.0, min(sentiment_score * 30.0, 15.0))
     
-    score = min(base_score + mom_boost + vol_bonus + meme_bonus, 98.0)
+    score = min(max(base_score + mom_boost + vol_bonus + meme_bonus + sentiment_bonus, 5.0), 98.0)
 
-    # Directional breakout signal with calibrated threshold
-    if pct_change >= 0.006:
+    # Clean directional breakout signal without random fallbacks
+    if pct_change >= 0.005 and score >= 65.0:
         signal = "BUY"
-        reason = f"Bullish breakout surge +{pct_change:.3f}%"
-    elif pct_change <= -0.006:
+        reason = f"Bullish breakout surge +{pct_change:.3f}% (Sentiment: {'+' if sentiment_score >= 0 else ''}{sentiment_score:.2f})"
+    elif pct_change <= -0.008:
         signal = "SELL"
         reason = f"Bearish momentum breakdown {pct_change:.3f}%"
     else:
-        signal = "BUY" if (score >= 65 and random.random() > 0.45) else "HOLD"
-        reason = "Consolidation before expansion"
-        score = max(score - 15.0, 10.0)
+        signal = "HOLD"
+        reason = "Awaiting institutional confluence"
+        score = max(score - 10.0, 15.0)
 
     return {
         "pair": pair,
@@ -71,15 +77,18 @@ def _score_opportunity(pair: str, price: float, prev_price: float, volume: float
         "price": round(price, 8),
         "pct_change": round(pct_change, 4),
         "volume": round(volume, 1),
+        "sentiment": round(sentiment_score, 2),
         "reason": reason,
         "timestamp": int(time.time()),
     }
 
 
-def scan_opportunities(live_prices: Dict[str, float], live_volumes: Dict[str, float] = None) -> List[dict]:
+def scan_opportunities(live_prices: Dict[str, float], live_volumes: Dict[str, float] = None, sentiment_dict: Dict[str, float] = None) -> List[dict]:
     global _prev_prices
     if live_volumes is None:
         live_volumes = {}
+    if sentiment_dict is None:
+        sentiment_dict = {}
 
     opportunities = []
     for pair in TRADING_UNIVERSE:
@@ -88,7 +97,8 @@ def scan_opportunities(live_prices: Dict[str, float], live_volumes: Dict[str, fl
             continue
         prev = _prev_prices.get(pair, price)
         vol = live_volumes.get(pair, random.uniform(20, 200))
-        opp = _score_opportunity(pair, price, prev, vol)
+        sent = sentiment_dict.get(pair, 0.0)
+        opp = _score_opportunity(pair, price, prev, vol, sentiment_score=sent)
         opportunities.append(opp)
 
     for pair, price in live_prices.items():
@@ -131,3 +141,7 @@ DEFAULT_PRICES = {
     "BONK/USDT": 0.000032, "XRP/USDT": 2.15, "ADA/USDT": 0.72,
     "AVAX/USDT": 35.0, "MATIC/USDT": 0.52,
 }
+
+def get_default_prices() -> Dict[str, float]:
+    return DEFAULT_PRICES
+

@@ -91,11 +91,18 @@ except Exception as e:
 # BOT 1: Institutional Portfolio Trading Bot (Exclusively trades Bitcoin & Gold)
 TRADING_PAIRS = ["BTC/USDT", "PAXG/USDT"]
 
-# BOT 2: Autonomous $10 Swarm Trading Universe (Full authority over crypto & meme coins)
+# UNIVERSAL CRYPTO & MEME TRADING UNIVERSE (30+ Major, Alt, and Meme assets)
 SWARM_TRADING_UNIVERSE = [
-    "BTC/USDT", "ETH/USDT", "SOL/USDT", "PAXG/USDT",
-    "DOGE/USDT", "SHIB/USDT", "PEPE/USDT", "WIF/USDT", "BONK/USDT",
-    "XRP/USDT", "ADA/USDT", "BNB/USDT", "AVAX/USDT",
+    # Mega Caps & Gold
+    "BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT", "PAXG/USDT",
+    # Top Altcoins & High-Beta Layer 1s
+    "XRP/USDT", "ADA/USDT", "AVAX/USDT", "SUI/USDT", "NEAR/USDT", 
+    "APT/USDT", "LINK/USDT", "DOT/USDT", "LTC/USDT", "MATIC/USDT",
+    # AI & DeFi Leaders
+    "FET/USDT", "RENDER/USDT", "INJ/USDT", "AAVE/USDT", "UNI/USDT",
+    # High-Velocity Meme & Momentum Coins
+    "PEPE/USDT", "SHIB/USDT", "DOGE/USDT", "WIF/USDT", "BONK/USDT", 
+    "FLOKI/USDT", "NEIRO/USDT", "BOME/USDT"
 ]
 
 # Bot autonomous trading state
@@ -676,9 +683,9 @@ async def startup_event():
     global testnet
     print("[Startup] Initializing Quantum AI Trading OS...")
     
-    # 1. Initialize primary swarm bot ($10 starting capital)
-    bm.create_primary_bot()
-    print(f"[Startup] Swarm initialized immediately. Active bots: {bm.get_swarm_summary()['active_count']}")
+    # 1. Initialize Dual-Bot Architecture (Bot 1: Conservative Sniper, Bot 2: Aggressive Alpha Hunter)
+    bm.ensure_dual_bots()
+    print(f"[Startup] Dual Bots online immediately. Active bots: {len(bm.get_all_bots())}")
 
     # 2. Auto-enable real trading and recover active spot holdings in background
     async def _async_exchange_init():
@@ -1478,6 +1485,104 @@ def get_portfolio_analytics():
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# ⚡ UNIVERSAL AI DUAL-BOT & 20-INDICATOR CHART INTELLIGENCE ENDPOINTS
+# ═══════════════════════════════════════════════════════════════════════════
+
+@app.get("/api/bots/dual_status")
+def get_dual_bot_status_endpoint():
+    """Returns live telemetry, thoughts, balances, and parameters for Bot 1 and Bot 2."""
+    status = bm.get_dual_bot_status()
+    active_spots = bm.get_active_real_positions()
+    perf = tmem.get_performance_summary()
+    return {
+        "bots": status.get("bots", []),
+        "active_spots": active_spots,
+        "performance": perf,
+        "total_spots_active": len(active_spots),
+        "max_slots": bm.MAX_CONCURRENT_REAL_POSITIONS
+    }
+
+
+@app.get("/api/market/chart_indicators/{symbol:path}")
+def get_coin_chart_indicators(symbol: str):
+    """Computes the complete institutional 20-indicator matrix for any selected coin."""
+    clean_sym = symbol.replace("-", "/").upper()
+    if "/" not in clean_sym and not clean_sym.endswith("USDT"):
+        clean_sym = f"{clean_sym}/USDT"
+    elif "/" not in clean_sym and clean_sym.endswith("USDT"):
+        base = clean_sym[:-4]
+        clean_sym = f"{base}/USDT"
+
+    s_inst = pair_streamers.get(clean_sym) or DataStreamer(symbol=clean_sym, timeframe="1m")
+    df = s_inst.fetch_historical_data(limit=60)
+    
+    live_p = 0.0
+    if exchange_connector:
+        try:
+            live_p = exchange_connector.get_price(clean_sym)
+        except Exception:
+            live_p = 0.0
+    if live_p <= 0 and df is not None and len(df) > 0:
+        live_p = float(df['close'].iloc[-1])
+
+    sent = 0.22
+    try:
+        sent = news_engine.fetch_sentiment(clean_sym)
+    except Exception:
+        sent = 0.22
+
+    matrix = chart_reader.get_20_indicator_matrix(
+        symbol=clean_sym,
+        df=df,
+        live_price=live_p,
+        sentiment_score=sent,
+        fear_greed_score=68
+    )
+    return matrix
+
+
+_univ_intel_cache = {"data": None, "ts": 0}
+
+@app.get("/api/market/universal_intelligence")
+def get_universal_intelligence():
+    """Returns 30+ coin universal intelligence with prices, technical scores, and internet news sentiment."""
+    now_ts = time.time()
+    if _univ_intel_cache["data"] is not None and (now_ts - _univ_intel_cache["ts"]) < 8:
+        return _univ_intel_cache["data"]
+
+    cached_opps = {o["pair"]: o for o in get_cached_opportunities()}
+    def_prices = DEFAULT_PRICES
+    result = []
+    
+    for pair in SWARM_TRADING_UNIVERSE:
+        opp = cached_opps.get(pair, {})
+        price = opp.get("price", 0.0)
+        if price <= 0:
+            price = def_prices.get(pair, 1.0)
+
+        sent = opp.get("sentiment_score", 0.18)
+        score = opp.get("score", 68.0)
+        pct_change = opp.get("pct_change", 0.0)
+        signal = opp.get("signal", "BUY" if score >= 65 else "HOLD")
+        
+        result.append({
+            "pair": pair,
+            "price": price,
+            "pct_change_24h": pct_change,
+            "technical_score": score,
+            "sentiment_score": sent,
+            "sentiment_label": "BULLISH" if sent >= 0.10 else "BEARISH" if sent <= -0.10 else "NEUTRAL",
+            "signal": signal,
+            "is_meme": any(m in pair for m in ["DOGE", "SHIB", "PEPE", "WIF", "BONK", "FLOKI", "NEIRO", "BOME"])
+        })
+        
+    data = {"universe": result, "total_coins": len(result)}
+    _univ_intel_cache["data"] = data
+    _univ_intel_cache["ts"] = now_ts
+    return data
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # 🤖 SWARM COMMAND CENTER ENDPOINTS
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -2188,28 +2293,40 @@ async def swarm_trading_loop():
                         print(f"[Real Spot Entry Error] {enter_err}")
 
             # ─────────────────────────────────────────────────────────────────
-            # REAL SPOT BOT SYNCHRONIZATION & CONTINUOUS MONITORING
+            # DUAL-BOT SYNCHRONIZATION & REAL SPOT MONITORING
             # ─────────────────────────────────────────────────────────────────
-            # Ensure primary bot purely mirrors REAL Binance Spot executions & true PnL
             active_spots = bm.get_active_real_positions()
             real_perf = tmem.get_performance_summary()
             with bm.swarm_lock:
-                active_bots = [b for b in bm.swarm_bots.values() if b["status"] == bm.STATUS_ACTIVE]
-                if active_bots:
-                    pb = active_bots[0]
-                    pb["trades_today"] = real_perf.get("total_trades", 0)
-                    pb["winning_trades"] = real_perf.get("total_wins", 0)
-                    pb["losing_trades"] = real_perf.get("total_losses", 0)
-                    pb["daily_pnl"] = round(real_perf.get("total_pnl_usd", 0.0) or 0.0, 4)
+                # 1. Update Bot 1: Conservative Institutional Sniper
+                b1 = bm.swarm_bots.get("BOT-001-SNIPER")
+                if b1:
+                    b1["trades_today"] = real_perf.get("total_trades", 0)
+                    b1["winning_trades"] = real_perf.get("total_wins", 0)
+                    b1["losing_trades"] = real_perf.get("total_losses", 0)
+                    b1["daily_pnl"] = round(real_perf.get("total_pnl_usd", 0.0) or 0.0, 4)
                     if active_spots:
                         pos_summary = ", ".join([f"{p['symbol']} ({'+' if p.get('unrealized_pnl_pct', 0) >= 0 else ''}{p.get('unrealized_pnl_pct', 0):.2f}%)" for p in active_spots])
-                        pb["thought"] = f"🟢 REAL SPOT ACTIVE [{len(active_spots)}/{bm.MAX_CONCURRENT_REAL_POSITIONS}]: {pos_summary} | Dynamic Trailing Active"
-                        pb["active_pair"] = active_spots[0]["symbol"]
+                        b1["thought"] = f"🟢 MANAGING [{len(active_spots)}/{bm.MAX_CONCURRENT_REAL_POSITIONS}] REAL SPOT SLOTS: {pos_summary} | Dynamic Trailing Active"
+                        b1["active_pair"] = active_spots[0]["symbol"]
                     else:
-                        top_opp = opportunities[0] if opportunities else None
-                        top_info = f" | Top candidate: {top_opp['pair']} (Score: {top_opp['score']})" if top_opp else ""
-                        pb["thought"] = f"🔍 SCANNING {len(SWARM_TRADING_UNIVERSE)} COINS for 4/5 Confluence setups on Binance Spot{top_info}. 100% Real Trades Only."
-                        pb["active_pair"] = None
+                        b1["thought"] = f"🎯 SNIPER: Scanning {len(SWARM_TRADING_UNIVERSE)} universal coins for 4/5 Confluence setups on Binance. Capital preserved."
+                        b1["active_pair"] = None
+
+                # 2. Update Bot 2: Aggressive Alpha Hunter
+                b2 = bm.swarm_bots.get("BOT-002-ALPHA")
+                if b2:
+                    b2["trades_today"] = real_perf.get("total_trades", 0)
+                    b2["winning_trades"] = real_perf.get("total_wins", 0)
+                    b2["losing_trades"] = real_perf.get("total_losses", 0)
+                    b2["daily_pnl"] = round(real_perf.get("total_pnl_usd", 0.0) or 0.0, 4)
+                    top_opp = opportunities[0] if opportunities else None
+                    if top_opp and top_opp.get("score", 0) >= 70:
+                        b2["thought"] = f"⚡ ALPHA HUNTER: Momentum breakout surge on {top_opp['pair']} (Score: {top_opp['score']} | +{top_opp.get('pct_change', 0):.2f}% | Sentiment: +{top_opp.get('sentiment', 0.2):.2f}). Fast scalp armed!"
+                        b2["active_pair"] = top_opp["pair"]
+                    else:
+                        b2["thought"] = f"⚡ ALPHA HUNTER: Scanning 30+ meme & alt tokens for internet news sentiment and volume surge breakouts."
+                        b2["active_pair"] = None
 
             # Broadcast full swarm status every 3 ticks
             if loop_tick % 3 == 0:

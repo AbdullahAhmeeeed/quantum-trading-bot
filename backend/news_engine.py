@@ -7,6 +7,7 @@ from datetime import datetime
 class NewsEngine:
     def __init__(self):
         self._cached_news = {}
+        self._cached_sentiment = {}
 
     def _to_query(self, symbol: str) -> str:
         if "BTC" in symbol: return "Bitcoin"
@@ -77,12 +78,22 @@ class NewsEngine:
     def fetch_sentiment(self, symbol: str) -> float:
         """
         Calculates aggregate NLP sentiment from live articles.
+        Cached for 5 minutes per symbol to ensure high throughput.
         """
+        import time
+        now = time.time()
+        if symbol in self._cached_sentiment:
+            ts, sc = self._cached_sentiment[symbol]
+            if now - ts < 300:
+                return sc
         articles = self.fetch_articles(symbol)
         if not articles:
-            return 0.0
-        scores = [a["sentiment_score"] for a in articles]
-        return round(sum(scores) / len(scores), 2)
+            score = 0.0
+        else:
+            scores = [a["sentiment_score"] for a in articles]
+            score = round(sum(scores) / len(scores), 2)
+        self._cached_sentiment[symbol] = (now, score)
+        return score
 
     def fetch_google_trends(self, symbol: str) -> dict:
         """
