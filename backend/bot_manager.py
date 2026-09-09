@@ -270,17 +270,30 @@ def get_swarm_summary() -> dict:
         real_trades_list = []
         try:
             from trade_memory import trade_memory as tmem
-            recent = tmem.get_recent_trades(limit=30)
+            recent = tmem.get_recent_trades(limit=50)
             for r in recent:
                 pnl_u = float(r.get("pnl_usd", 0.0) or 0.0)
+                pnl_p = float(r.get("pnl_pct", 0.0) or 0.0)
+                cost = float(r.get("cost_usd", 1.2) or 1.2)
+                # Est Binance spot fee: 0.1% buy + 0.1% sell = 0.20% of cost
+                est_fee = round(cost * 0.002, 4)
                 real_trades_list.append({
+                    "id": r.get("id"),
                     "time": r.get("closed_at") or r.get("opened_at"),
+                    "opened_at": r.get("opened_at"),
+                    "closed_at": r.get("closed_at"),
                     "bot_id": "REAL-SPOT",
                     "pair": r.get("symbol"),
                     "signal": r.get("side", "BUY"),
-                    "capital_risked": round(float(r.get("cost_usd", 1.0) or 1.0), 2),
+                    "capital_risked": round(cost, 2),
+                    "entry_price": float(r.get("entry_price", 0.0) or 0.0),
+                    "exit_price": float(r.get("exit_price", 0.0) or 0.0),
                     "pnl": round(pnl_u, 4),
-                    "result": "WIN" if pnl_u > 0 else "LOSS",
+                    "pnl_pct": round(pnl_p, 2),
+                    "exit_reason": r.get("exit_reason", "MANUAL"),
+                    "duration_seconds": int(r.get("duration_seconds", 0) or 0),
+                    "est_fee": est_fee,
+                    "result": "WIN" if pnl_u > 0.0005 else ("BE" if abs(pnl_u) <= 0.0005 else "LOSS"),
                     "confidence": round(float(r.get("entry_ml_confidence", 0.85) or 0.85), 2),
                     "bot_balance_after": round(float(r.get("exit_price", 0.0) or 0.0), 6),
                 })
@@ -453,7 +466,7 @@ def set_primary_bot_capital(amount: float) -> dict:
 
 
 real_trading_mode = "SAFE"
-initial_real_wallet_usd = 0.0
+initial_real_wallet_usd = 2.70
 
 
 def enable_real_trading(amount: float, mode: str = "SAFE", initial_wallet_usd: float = 0.0) -> dict:

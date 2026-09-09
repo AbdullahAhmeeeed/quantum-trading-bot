@@ -445,17 +445,18 @@ class TradeMemory:
             'adaptation_count': params.get('adaptation_count', 0),
             'coin_reputations': self.get_all_coin_reputations(),
             'adaptive_params': params,
-            'recent_trades': self.get_recent_trades(10)
+            'recent_trades': self.get_recent_trades(50)
         }
 
-    def get_recent_trades(self, limit=20):
+    def get_recent_trades(self, limit=50):
         with self.lock:
             cursor = self.conn.cursor()
             cursor.execute('''
-                SELECT symbol, pnl_pct, pnl_usd, exit_reason, duration_seconds, closed_at 
+                SELECT id, symbol, side, cost_usd, entry_price, exit_price, pnl_pct, pnl_usd, exit_reason, duration_seconds, opened_at, closed_at 
                 FROM trade_journal WHERE is_open = 0 
-                ORDER BY closed_at DESC LIMIT ?
+                ORDER BY id DESC LIMIT ?
             ''', (limit,))
             return [dict(t) for t in cursor.fetchall()]
 
 trade_memory = TradeMemory()
+

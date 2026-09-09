@@ -698,7 +698,7 @@ async def startup_event():
                 status = await loop.run_in_executor(None, exchange_connector.test_connection)
                 if status.get('connected'):
                     usdt_b = float(status.get('usdt_balance', 0.0) or 0.0)
-                    bm.enable_real_trading(amount=max(1.0, usdt_b), mode="SAFE", initial_wallet_usd=2.68)
+                    bm.enable_real_trading(amount=max(1.0, usdt_b), mode="SAFE", initial_wallet_usd=2.70)
                     await loop.run_in_executor(None, sync_open_positions_from_exchange)
                     print(f"[Startup] Live Real Spot execution AUTO-ENABLED with ${usdt_b:.2f} USDT")
             except Exception as conn_err:
@@ -1754,11 +1754,29 @@ def get_swarm_real_pnl():
         current_wallet_usd = round(usdt + fdusd + coins_usd, 4)
         init_usd = bm.get_initial_real_wallet_usd()
         if init_usd <= 0:
-            init_usd = current_wallet_usd
-            bm.initial_real_wallet_usd = init_usd
+            init_usd = 2.70
+            bm.initial_real_wallet_usd = 2.70
 
         real_pnl_usd = round(current_wallet_usd - init_usd, 4)
         real_pnl_pct = round((real_pnl_usd / init_usd * 100.0) if init_usd > 0 else 0.0, 2)
+
+        # Calculate trade journal metrics and fee breakdown
+        total_trades_count = 0
+        total_trade_volume = 0.0
+        total_market_pnl = 0.0
+        try:
+            with tmem.lock:
+                cursor = tmem.conn.cursor()
+                cursor.execute("SELECT COUNT(*), SUM(cost_usd), SUM(pnl_usd) FROM trade_journal WHERE is_open=0")
+                row = cursor.fetchone()
+                if row:
+                    total_trades_count = int(row[0] or 0)
+                    total_trade_volume = float(row[1] or 0.0)
+                    total_market_pnl = float(row[2] or 0.0)
+        except Exception:
+            pass
+
+        est_binance_fees = round(total_trade_volume * 0.002, 4)  # 0.1% buy + 0.1% sell
 
         return {
             "connected": True,
@@ -1773,6 +1791,9 @@ def get_swarm_real_pnl():
             "usdt_balance": round(usdt, 4),
             "fdusd_balance": round(fdusd, 4),
             "coins_equity_usd": round(coins_usd, 4),
+            "total_trades_count": total_trades_count,
+            "est_binance_fees_usd": est_binance_fees,
+            "market_trade_pnl_usd": round(total_market_pnl, 4),
             "timestamp": int(time.time())
         }
     except Exception as e:
