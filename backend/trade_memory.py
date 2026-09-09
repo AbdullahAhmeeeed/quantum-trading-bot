@@ -258,8 +258,8 @@ class TradeMemory:
             new_sl = min(new_sl + 0.002, 0.020)
             changes.append(f"Widened SL to {new_sl:.3f}")
         if stagnation_count / total_trades > 0.70:
-            new_tp = max(new_tp - 0.003, 0.008)
-            changes.append(f"Tightened TP to {new_tp:.3f}")
+            new_tp = max(new_tp - 0.002, 0.016)  # Minimum 1.60% to ensure profit far exceeds 0.20% fee
+            changes.append(f"Adjusted TP to {new_tp:.3f}")
         if trailing_count / total_trades > 0.40:
             new_trailing = max(new_trailing - 0.001, 0.004)
             changes.append(f"Tightened trailing gap to {new_trailing:.3f}")

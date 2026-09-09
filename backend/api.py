@@ -2053,14 +2053,14 @@ async def swarm_trading_loop():
                         except Exception:
                             pass
 
-                    # A2. Guaranteed Breakeven Profit Lock (+0.35% profit moves SL to entry)
-                    if pnl_pct >= 0.35 and not updated_pos.get("breakeven_locked"):
-                        be_stop = entry_p * 1.0005  # Covers entry and tiny buffer
+                    # A2. Guaranteed Fee-Inclusive Breakeven Lock (+0.45% moves SL to +0.22% to cover Binance 0.20% fee)
+                    if pnl_pct >= 0.45 and not updated_pos.get("breakeven_locked"):
+                        be_stop = entry_p * 1.0022  # Covers 0.10% buy fee + 0.10% sell fee + 0.02% buffer
                         if be_stop > stop_p:
                             updated_pos["stop_loss_price"] = be_stop
                             updated_pos["breakeven_locked"] = True
                             stop_p = be_stop
-                            be_msg = f"🛡️ BREAKEVEN PROTECTED on {sym}! Stop-Loss locked at entry (${be_stop:.8f}). Zero downside risk!"
+                            be_msg = f"🛡️ FEE-PROOF BREAKEVEN on {sym}! SL locked @ ${be_stop:.8f} (+0.22% covers Binance fees). Zero fee loss risk!"
                             with bm.swarm_lock:
                                 owner_b = active_real_pos.get("bot_id") or bot_id
                                 if owner_b in bm.swarm_bots:
@@ -2071,11 +2071,11 @@ async def swarm_trading_loop():
                                 except Exception:
                                     pass
 
-                    # B. Instant Quick-Profit Lock on Momentum Stall (+0.50% to +0.80%)
-                    # If in healthy scalp profit but NOT in runner breakout, lock profit if candle stalls!
+                    # B. Instant Quick-Profit Lock on Momentum Stall (+0.80% to +1.50%)
+                    # Only quick-lock if profit significantly exceeds the 0.20% Binance fee!
                     should_quick_lock = False
                     stall_reason = ""
-                    if pnl_pct >= 0.50 and not updated_pos.get("runner_ratcheted"):
+                    if pnl_pct >= 0.80 and not updated_pos.get("runner_ratcheted"):
                         try:
                             s_inst = pair_streamers.get(sym) or DataStreamer(symbol=sym, timeframe="1m")
                             pos_df = s_inst.fetch_historical_data(limit=25)
@@ -2251,9 +2251,10 @@ async def swarm_trading_loop():
                     
                     # Get self-learned adaptive params for TP/SL/confidence
                     adaptive = tmem.get_adaptive_params()
-                    learned_tp = adaptive.get("tp_pct", 0.018)
-                    learned_sl = adaptive.get("sl_pct", 0.008)
-                    learned_trailing = adaptive.get("trailing_dist_pct", 0.008)
+                    # Fee-aware parameters: minimum 1.80% TP ensures net profit after 0.20% Binance fee
+                    learned_tp = max(float(adaptive.get("tp_pct", 0.018) or 0.018), 0.018)
+                    learned_sl = max(float(adaptive.get("sl_pct", 0.010) or 0.010), 0.010)
+                    learned_trailing = max(float(adaptive.get("trailing_dist_pct", 0.010) or 0.010), 0.008)
                     
                     try:
                         bal_info = exchange_connector.get_account_balance()
