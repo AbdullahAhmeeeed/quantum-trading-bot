@@ -99,6 +99,14 @@ function App() {
   const [selectedRealMode, setSelectedRealMode] = useState('SAFE') // Locked to 'SAFE'
   const [realAllocating, setRealAllocating] = useState(false)
   const [realAllocationMsg, setRealAllocationMsg] = useState('')
+
+  // Dedicated Bot Capital Allocation Modal State (Sniper vs Alpha Hunter)
+  const [showBotAllocateModal, setShowBotAllocateModal] = useState(false)
+  const [targetBotId, setTargetBotId] = useState('BOT-002-ALPHA')
+  const [allocateAmount, setAllocateAmount] = useState('1.20')
+  const [botAllocateLoading, setBotAllocateLoading] = useState(false)
+  const [botAllocateMsg, setBotAllocateMsg] = useState('')
+
   const [realWalletPnlData, setRealWalletPnlData] = useState(null)
   const [activePositionData, setActivePositionData] = useState(null)
   const [activePositions, setActivePositions] = useState([])
@@ -195,6 +203,43 @@ function App() {
       setRealAllocationMsg('Error connecting to backend');
     } finally {
       setRealAllocating(false);
+    }
+  };
+
+  const handleAllocateBotCapital = async (botId, amt) => {
+    setBotAllocateLoading(true);
+    setBotAllocateMsg('');
+    try {
+      const chosenBot = botId || targetBotId;
+      const chosenAmt = parseFloat(amt || allocateAmount) || 1.20;
+      const res = await fetch(`${API_BASE_URL}/api/bots/allocate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          bot_id: chosenBot,
+          amount: chosenAmt
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        playSound('SUCCESS');
+        const bName = chosenBot === 'BOT-002-ALPHA' ? 'Alpha Hunter #2' : 'Sniper #1';
+        setBotAllocateMsg(`✅ Successfully allocated $${chosenAmt.toFixed(2)} USDT to ${bName}! Bot is armed.`);
+        setTimeout(() => {
+          setBotAllocateMsg('');
+          setShowBotAllocateModal(false);
+        }, 1800);
+        fetchUniversalData();
+        fetchLiveWallet();
+      } else {
+        playSound('ALERT');
+        setBotAllocateMsg(data.error || 'Failed to allocate capital');
+      }
+    } catch (e) {
+      console.error(e);
+      setBotAllocateMsg('Error connecting to backend');
+    } finally {
+      setBotAllocateLoading(false);
     }
   };
 
@@ -1156,6 +1201,35 @@ function App() {
                 <span style={{marginLeft: '4px', opacity: 0.85}}>(${liveWalletData.usdt_balance.toFixed(2)})</span>
               )}
             </div>
+
+            {/* 💰 Allocate Capital to Bot Button (Direct Access) */}
+            <button
+              type="button"
+              onClick={() => {
+                setTargetBotId('BOT-002-ALPHA');
+                setAllocateAmount('1.20');
+                setBotAllocateMsg('');
+                setShowBotAllocateModal(true);
+              }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '7px',
+                background: 'linear-gradient(135deg, rgba(0, 240, 255, 0.2), rgba(168, 85, 247, 0.25))',
+                border: '1px solid #00f0ff',
+                padding: '6px 14px',
+                borderRadius: '20px',
+                fontSize: '0.78rem',
+                fontWeight: 900,
+                color: '#00f0ff',
+                cursor: 'pointer',
+                boxShadow: '0 0 15px rgba(0, 240, 255, 0.3)',
+                transition: 'all 0.2s ease'
+              }}
+            >
+              <span>⚡</span>
+              <span>Allocate Bot Capital ($1.20)</span>
+            </button>
 
             {/* Audio Toggle */}
             <button 
@@ -3091,6 +3165,31 @@ function App() {
               </div>
               <div style={{display: 'flex', gap: '10px', flexWrap: 'wrap'}}>
                 <button
+                  type="button"
+                  onClick={() => {
+                    setTargetBotId('BOT-002-ALPHA');
+                    setAllocateAmount('1.20');
+                    setBotAllocateMsg('');
+                    setShowBotAllocateModal(true);
+                  }}
+                  style={{
+                    padding:'8px 18px',
+                    background:'linear-gradient(135deg, #00f0ff, #0284c7)',
+                    border:'none',
+                    borderRadius:'8px',
+                    color:'#000',
+                    fontWeight:900,
+                    cursor:'pointer',
+                    fontSize:'0.88rem',
+                    boxShadow:'0 0 15px rgba(0, 240, 255, 0.4)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}
+                >
+                  ⚡ Allocate Capital to Bot ($1.20)
+                </button>
+                <button
                   onClick={() => setShowRealMoneyModal(true)}
                   style={{
                     padding:'8px 20px',
@@ -3212,6 +3311,118 @@ function App() {
                       ({(realWalletPnlData?.real_net_pnl_pct || 0) >= 0 ? '+' : ''}{(realWalletPnlData?.real_net_pnl_pct || 0.0).toFixed(2)}%)
                     </span>
                   </div>
+                </div>
+              </div>
+            </div>
+
+            {/* ── DUAL-BOT COMMAND DECK (SNIPER VS ALPHA HUNTER) IN SWARM CENTER ── */}
+            <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '1rem', marginBottom: '1.4rem'}}>
+              {/* Bot 1: Sniper Card */}
+              <div className="glass-card" style={{border: '1px solid rgba(16,185,129,0.3)', position: 'relative', overflow: 'hidden'}}>
+                <div style={{position: 'absolute', top: 0, left: 0, right: 0, height: '3px', background: 'linear-gradient(90deg, #10b981, #059669)'}} />
+                <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.6rem'}}>
+                  <div style={{display: 'flex', alignItems: 'center', gap: '8px'}}>
+                    <span style={{fontSize: '1.1rem'}}>🛡️</span>
+                    <span style={{fontWeight: 800, fontSize: '0.95rem', color: '#10b981'}}>Bot #1: Institutional Sniper</span>
+                  </div>
+                  <span style={{fontSize: '0.68rem', fontWeight: 800, padding: '2px 8px', borderRadius: '6px', background: 'rgba(16,185,129,0.15)', color: '#10b981', border: '1px solid rgba(16,185,129,0.3)'}}>
+                    4/5 CONFLUENCE
+                  </span>
+                </div>
+                <div style={{display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.4rem', marginBottom: '0.6rem', textAlign: 'center'}}>
+                  <div style={{background: 'rgba(255,255,255,0.02)', padding: '0.4rem', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.05)'}}>
+                    <div style={{fontSize: '0.62rem', color: 'var(--text-muted)'}}>CAPITAL ALLOCATED</div>
+                    <div style={{fontSize: '0.85rem', fontWeight: 800, color: '#10b981'}}>${(dualBotStatus?.bots?.[0]?.current_balance ?? 1.45).toFixed(2)} USDT</div>
+                  </div>
+                  <div style={{background: 'rgba(255,255,255,0.02)', padding: '0.4rem', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.05)'}}>
+                    <div style={{fontSize: '0.62rem', color: 'var(--text-muted)'}}>DAILY TARGET</div>
+                    <div style={{fontSize: '0.85rem', fontWeight: 800, color: '#ff9500'}}>$100.00</div>
+                  </div>
+                  <div style={{background: 'rgba(255,255,255,0.02)', padding: '0.4rem', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.05)'}}>
+                    <div style={{fontSize: '0.62rem', color: 'var(--text-muted)'}}>24H DEADLINE</div>
+                    <div style={{fontSize: '0.85rem', fontWeight: 800, color: '#00f0ff'}}>{dualBotStatus?.bots?.[0]?.countdown || '23h 58m'}</div>
+                  </div>
+                </div>
+                <div style={{
+                  background: 'rgba(7, 10, 18, 0.7)', borderLeft: '3px solid #10b981',
+                  borderRadius: '6px', padding: '0.5rem 0.7rem', fontFamily: 'monospace', fontSize: '0.72rem',
+                  color: '#a7f3d0', minHeight: '40px', display: 'flex', alignItems: 'center'
+                }}>
+                  {dualBotStatus?.bots?.[0]?.thought || 'Scanning institutional setups with 4/5 confluence check...'}
+                </div>
+                <div style={{marginTop: '0.6rem'}}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTargetBotId('BOT-001-SNIPER');
+                      setAllocateAmount('1.45');
+                      setBotAllocateMsg('');
+                      setShowBotAllocateModal(true);
+                    }}
+                    style={{
+                      width: '100%', padding: '6px 10px', borderRadius: '6px', border: '1px solid rgba(16, 185, 129, 0.4)',
+                      background: 'rgba(16, 185, 129, 0.12)', color: '#10b981', fontWeight: 800, fontSize: '0.75rem',
+                      cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px'
+                    }}
+                  >
+                    <span>💰</span>
+                    <span>Allocate Capital to Sniper</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Bot 2: Alpha Hunter Card */}
+              <div className="glass-card" style={{border: '1px solid rgba(0,240,255,0.35)', position: 'relative', overflow: 'hidden'}}>
+                <div style={{position: 'absolute', top: 0, left: 0, right: 0, height: '3px', background: 'linear-gradient(90deg, #00f0ff, #a855f7)'}} />
+                <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.6rem'}}>
+                  <div style={{display: 'flex', alignItems: 'center', gap: '8px'}}>
+                    <span style={{fontSize: '1.1rem'}}>⚡</span>
+                    <span style={{fontWeight: 800, fontSize: '0.95rem', color: '#00f0ff'}}>Bot #2: Aggressive Alpha Hunter</span>
+                  </div>
+                  <span style={{fontSize: '0.68rem', fontWeight: 800, padding: '2px 8px', borderRadius: '6px', background: 'rgba(0,240,255,0.15)', color: '#00f0ff', border: '1px solid rgba(0,240,255,0.3)'}}>
+                    HIGH VELOCITY
+                  </span>
+                </div>
+                <div style={{display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.4rem', marginBottom: '0.6rem', textAlign: 'center'}}>
+                  <div style={{background: 'rgba(255,255,255,0.02)', padding: '0.4rem', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.05)'}}>
+                    <div style={{fontSize: '0.62rem', color: 'var(--text-muted)'}}>CAPITAL ALLOCATED</div>
+                    <div style={{fontSize: '0.85rem', fontWeight: 800, color: '#00f0ff'}}>${(dualBotStatus?.bots?.[1]?.current_balance ?? 1.20).toFixed(2)} USDT</div>
+                  </div>
+                  <div style={{background: 'rgba(255,255,255,0.02)', padding: '0.4rem', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.05)'}}>
+                    <div style={{fontSize: '0.62rem', color: 'var(--text-muted)'}}>DAILY TARGET</div>
+                    <div style={{fontSize: '0.85rem', fontWeight: 800, color: '#ff9500'}}>$100.00</div>
+                  </div>
+                  <div style={{background: 'rgba(255,255,255,0.02)', padding: '0.4rem', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.05)'}}>
+                    <div style={{fontSize: '0.62rem', color: 'var(--text-muted)'}}>24H DEADLINE</div>
+                    <div style={{fontSize: '0.85rem', fontWeight: 800, color: '#a855f7'}}>{dualBotStatus?.bots?.[1]?.countdown || '23h 58m'}</div>
+                  </div>
+                </div>
+                <div style={{
+                  background: 'rgba(7, 10, 18, 0.7)', borderLeft: '3px solid #00f0ff',
+                  borderRadius: '6px', padding: '0.5rem 0.7rem', fontFamily: 'monospace', fontSize: '0.72rem',
+                  color: '#bae6fd', minHeight: '40px', display: 'flex', alignItems: 'center'
+                }}>
+                  {dualBotStatus?.bots?.[1]?.thought || 'Hunting high-beta breakout surges across universal coins...'}
+                </div>
+                <div style={{marginTop: '0.6rem'}}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTargetBotId('BOT-002-ALPHA');
+                      setAllocateAmount('1.20');
+                      setBotAllocateMsg('');
+                      setShowBotAllocateModal(true);
+                    }}
+                    style={{
+                      width: '100%', padding: '6px 10px', borderRadius: '6px', border: '1px solid rgba(0, 240, 255, 0.4)',
+                      background: 'rgba(0, 240, 255, 0.15)', color: '#00f0ff', fontWeight: 900, fontSize: '0.75rem',
+                      cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+                      boxShadow: '0 0 15px rgba(0, 240, 255, 0.25)'
+                    }}
+                  >
+                    <span>⚡</span>
+                    <span>Allocate $1.20 to Alpha Hunter</span>
+                  </button>
                 </div>
               </div>
             </div>
@@ -4111,6 +4322,26 @@ function App() {
                 }}>
                   {dualBotStatus?.bots?.[0]?.thought || 'Scanning institutional setups with 4/5 confluence check...'}
                 </div>
+
+                <div style={{marginTop: '0.8rem', display: 'flex', gap: '8px'}}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTargetBotId('BOT-001-SNIPER');
+                      setAllocateAmount('1.45');
+                      setBotAllocateMsg('');
+                      setShowBotAllocateModal(true);
+                    }}
+                    style={{
+                      flex: 1, padding: '7px 12px', borderRadius: '8px', border: '1px solid rgba(16, 185, 129, 0.4)',
+                      background: 'rgba(16, 185, 129, 0.12)', color: '#10b981', fontWeight: 800, fontSize: '0.78rem',
+                      cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px'
+                    }}
+                  >
+                    <span>💰</span>
+                    <span>Allocate Capital to Sniper</span>
+                  </button>
+                </div>
               </div>
 
               {/* Bot 2: Aggressive Alpha Hunter */}
@@ -4168,6 +4399,27 @@ function App() {
                   color: '#bae6fd', minHeight: '44px', display: 'flex', alignItems: 'center'
                 }}>
                   {dualBotStatus?.bots?.[1]?.thought || 'Hunting high-beta breakout surges across universal coins...'}
+                </div>
+
+                <div style={{marginTop: '0.8rem', display: 'flex', gap: '8px'}}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTargetBotId('BOT-002-ALPHA');
+                      setAllocateAmount('1.20');
+                      setBotAllocateMsg('');
+                      setShowBotAllocateModal(true);
+                    }}
+                    style={{
+                      flex: 1, padding: '7px 12px', borderRadius: '8px', border: '1px solid rgba(0, 240, 255, 0.4)',
+                      background: 'rgba(0, 240, 255, 0.15)', color: '#00f0ff', fontWeight: 900, fontSize: '0.78rem',
+                      cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+                      boxShadow: '0 0 15px rgba(0, 240, 255, 0.25)'
+                    }}
+                  >
+                    <span>⚡</span>
+                    <span>Allocate $1.20 to Alpha Hunter</span>
+                  </button>
                 </div>
               </div>
             </div>
@@ -4807,6 +5059,245 @@ function App() {
                   }}
                 >
                   {realAllocating ? 'Allocating on Binance...' : `🚀 Start Safe Live Trading ($${Number(selectedRealAmount).toFixed(2)})`}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Direct Bot Capital Allocation Modal (Sniper vs Alpha Hunter) ─────── */}
+        {showBotAllocateModal && (
+          <div style={{
+            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+            background: 'rgba(0, 0, 0, 0.85)', backdropFilter: 'blur(10px)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            zIndex: 99999, padding: '1rem'
+          }}>
+            <div className="glass-card" style={{
+              maxWidth: '520px', width: '100%',
+              background: 'linear-gradient(145deg, #0d121f, #070a12)',
+              border: '1px solid rgba(0, 240, 255, 0.4)', borderRadius: '16px',
+              padding: '1.8rem', boxShadow: '0 0 50px rgba(0, 240, 255, 0.25)',
+              position: 'relative'
+            }}>
+              <div style={{
+                position: 'absolute', top: 0, left: 0, right: 0, height: '4px',
+                background: 'linear-gradient(90deg, #00f0ff, #a855f7, #10b981)',
+                borderTopLeftRadius: '16px', borderTopRightRadius: '16px'
+              }} />
+
+              <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.2rem'}}>
+                <div style={{display: 'flex', alignItems: 'center', gap: '10px'}}>
+                  <span style={{fontSize: '1.4rem'}}>💰</span>
+                  <div>
+                    <h3 style={{margin: 0, fontSize: '1.15rem', fontWeight: 900, color: '#fff'}}>
+                      Allocate Capital to Trading Bot
+                    </h3>
+                    <div style={{fontSize: '0.72rem', color: 'var(--text-muted)'}}>
+                      Dedicated Binance Spot funds allocation per bot
+                    </div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowBotAllocateModal(false)}
+                  style={{
+                    background: 'transparent', border: 'none', color: 'var(--text-muted)',
+                    fontSize: '1.2rem', cursor: 'pointer', padding: '4px 8px'
+                  }}
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Live Wallet Balance Banner */}
+              <div style={{
+                background: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(255, 255, 255, 0.08)',
+                borderRadius: '10px', padding: '0.8rem 1rem', marginBottom: '1.2rem',
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+              }}>
+                <div>
+                  <div style={{fontSize: '0.68rem', color: 'var(--text-muted)'}}>BINANCE SPOT FREE BALANCE</div>
+                  <div style={{fontSize: '1.15rem', fontWeight: 900, color: '#10b981'}}>
+                    ${liveWalletData?.usdt_balance !== undefined ? liveWalletData.usdt_balance.toFixed(4) : '2.6511'} USDT
+                  </div>
+                </div>
+                <div style={{textAlign: 'right'}}>
+                  <div style={{fontSize: '0.68rem', color: 'var(--text-muted)'}}>MIN NOTIONAL</div>
+                  <div style={{fontSize: '0.82rem', fontWeight: 800, color: '#ff9500'}}>$1.00 USDT</div>
+                </div>
+              </div>
+
+              {/* Bot Selector Cards */}
+              <div style={{marginBottom: '1.2rem'}}>
+                <div style={{fontSize: '0.74rem', color: 'var(--text-muted)', fontWeight: 700, marginBottom: '0.5rem'}}>
+                  SELECT TARGET BOT
+                </div>
+                <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.8rem'}}>
+                  {/* Option 1: Alpha Hunter */}
+                  <div
+                    onClick={() => {
+                      setTargetBotId('BOT-002-ALPHA');
+                      if (allocateAmount === '1.45') setAllocateAmount('1.20');
+                    }}
+                    style={{
+                      padding: '0.9rem', borderRadius: '10px', cursor: 'pointer',
+                      background: targetBotId === 'BOT-002-ALPHA' ? 'rgba(0, 240, 255, 0.12)' : 'rgba(255, 255, 255, 0.02)',
+                      border: targetBotId === 'BOT-002-ALPHA' ? '2px solid #00f0ff' : '1px solid rgba(255, 255, 255, 0.08)',
+                      transition: 'all 0.2s ease'
+                    }}
+                  >
+                    <div style={{display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px'}}>
+                      <span>⚡</span>
+                      <span style={{fontWeight: 900, fontSize: '0.85rem', color: '#00f0ff'}}>Alpha Hunter #2</span>
+                    </div>
+                    <div style={{fontSize: '0.68rem', color: 'var(--text-muted)', lineHeight: '1.3'}}>
+                      Aggressive Scalp & Momentum Breakout on 28+ coins
+                    </div>
+                    <div style={{marginTop: '6px', fontSize: '0.72rem', fontWeight: 800, color: '#bae6fd'}}>
+                      Allocated: ${(dualBotStatus?.bots?.[1]?.current_balance ?? 1.20).toFixed(2)} USDT
+                    </div>
+                  </div>
+
+                  {/* Option 2: Sniper */}
+                  <div
+                    onClick={() => {
+                      setTargetBotId('BOT-001-SNIPER');
+                      if (allocateAmount === '1.20') setAllocateAmount('1.45');
+                    }}
+                    style={{
+                      padding: '0.9rem', borderRadius: '10px', cursor: 'pointer',
+                      background: targetBotId === 'BOT-001-SNIPER' ? 'rgba(16, 185, 129, 0.12)' : 'rgba(255, 255, 255, 0.02)',
+                      border: targetBotId === 'BOT-001-SNIPER' ? '2px solid #10b981' : '1px solid rgba(255, 255, 255, 0.08)',
+                      transition: 'all 0.2s ease'
+                    }}
+                  >
+                    <div style={{display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px'}}>
+                      <span>🎯</span>
+                      <span style={{fontWeight: 900, fontSize: '0.85rem', color: '#10b981'}}>Sniper #1</span>
+                    </div>
+                    <div style={{fontSize: '0.68rem', color: 'var(--text-muted)', lineHeight: '1.3'}}>
+                      Institutional 4/5 Confluence & Capital Preservation
+                    </div>
+                    <div style={{marginTop: '6px', fontSize: '0.72rem', fontWeight: 800, color: '#a7f3d0'}}>
+                      Allocated: ${(dualBotStatus?.bots?.[0]?.current_balance ?? 1.45).toFixed(2)} USDT
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Amount Input & Preset Pills */}
+              <div style={{marginBottom: '1.2rem'}}>
+                <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem'}}>
+                  <span style={{fontSize: '0.74rem', color: 'var(--text-muted)', fontWeight: 700}}>AMOUNT TO ALLOCATE (USDT)</span>
+                  <span style={{fontSize: '0.72rem', color: '#10b981', fontWeight: 700}}>
+                    Max Available: ${liveWalletData?.usdt_balance !== undefined ? liveWalletData.usdt_balance.toFixed(2) : '2.65'}
+                  </span>
+                </div>
+
+                <div style={{position: 'relative', marginBottom: '0.6rem'}}>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="1.00"
+                    max={liveWalletData?.usdt_balance || 100}
+                    value={allocateAmount}
+                    onChange={(e) => setAllocateAmount(e.target.value)}
+                    style={{
+                      width: '100%',
+                      background: 'rgba(0, 0, 0, 0.4)',
+                      border: '1px solid rgba(0, 240, 255, 0.4)',
+                      borderRadius: '10px',
+                      padding: '12px 60px 12px 14px',
+                      color: '#fff',
+                      fontSize: '1.1rem',
+                      fontWeight: 800,
+                      outline: 'none'
+                    }}
+                  />
+                  <span style={{
+                    position: 'absolute', right: '14px', top: '50%', transform: 'translateY(-50%)',
+                    fontWeight: 800, color: '#00f0ff', fontSize: '0.88rem'
+                  }}>
+                    USDT
+                  </span>
+                </div>
+
+                {/* Quick amount presets */}
+                <div style={{display: 'flex', gap: '6px', flexWrap: 'wrap'}}>
+                  {['1.08', '1.20', '1.45', '2.00'].map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => setAllocateAmount(preset)}
+                      style={{
+                        padding: '4px 10px', borderRadius: '6px', fontSize: '0.72rem', fontWeight: 800,
+                        background: allocateAmount === preset ? 'rgba(0, 240, 255, 0.25)' : 'rgba(255, 255, 255, 0.05)',
+                        border: allocateAmount === preset ? '1px solid #00f0ff' : '1px solid rgba(255, 255, 255, 0.1)',
+                        color: allocateAmount === preset ? '#00f0ff' : '#ddd',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      ${preset}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => setAllocateAmount((liveWalletData?.usdt_balance || 2.65).toFixed(2))}
+                    style={{
+                      padding: '4px 10px', borderRadius: '6px', fontSize: '0.72rem', fontWeight: 800,
+                      background: 'rgba(16, 185, 129, 0.2)', border: '1px solid #10b981', color: '#10b981',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    MAX
+                  </button>
+                </div>
+              </div>
+
+              {/* Status feedback message */}
+              {botAllocateMsg && (
+                <div style={{
+                  padding: '0.8rem 1rem', borderRadius: '8px', marginBottom: '1.2rem',
+                  fontSize: '0.82rem', fontWeight: 800,
+                  background: botAllocateMsg.includes('Successfully') ? 'rgba(16, 185, 129, 0.2)' : 'rgba(244, 63, 94, 0.2)',
+                  color: botAllocateMsg.includes('Successfully') ? '#10b981' : '#f43f5e',
+                  border: botAllocateMsg.includes('Successfully') ? '1px solid #10b981' : '1px solid #f43f5e'
+                }}>
+                  {botAllocateMsg}
+                </div>
+              )}
+
+              {/* Action Buttons */}
+              <div style={{display: 'flex', gap: '10px'}}>
+                <button
+                  type="button"
+                  onClick={() => setShowBotAllocateModal(false)}
+                  style={{
+                    flex: 1, padding: '12px', borderRadius: '10px',
+                    border: '1px solid var(--border-subtle)', background: 'transparent',
+                    color: 'var(--text-muted)', fontWeight: 800, cursor: 'pointer'
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={botAllocateLoading}
+                  onClick={() => handleAllocateBotCapital(targetBotId, allocateAmount)}
+                  style={{
+                    flex: 2, padding: '12px', borderRadius: '10px', border: 'none',
+                    background: targetBotId === 'BOT-002-ALPHA'
+                      ? 'linear-gradient(135deg, #00f0ff, #0284c7)'
+                      : 'linear-gradient(135deg, #10b981, #059669)',
+                    color: '#fff', fontWeight: 900, fontSize: '0.92rem',
+                    cursor: botAllocateLoading ? 'not-allowed' : 'pointer',
+                    boxShadow: targetBotId === 'BOT-002-ALPHA'
+                      ? '0 0 25px rgba(0, 240, 255, 0.4)'
+                      : '0 0 25px rgba(16, 185, 129, 0.4)'
+                  }}
+                >
+                  {botAllocateLoading ? 'Allocating Capital...' : `⚡ Confirm & Allocate $${Number(allocateAmount || 0).toFixed(2)} USDT`}
                 </button>
               </div>
             </div>
