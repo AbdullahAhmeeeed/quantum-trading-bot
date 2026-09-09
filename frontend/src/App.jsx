@@ -4084,7 +4084,9 @@ function App() {
                 <div style={{display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.5rem', marginBottom: '0.8rem', textAlign: 'center'}}>
                   <div style={{background: 'rgba(255,255,255,0.02)', padding: '0.5rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)'}}>
                     <div style={{fontSize: '0.65rem', color: 'var(--text-muted)'}}>CAPITAL ALLOCATED</div>
-                    <div style={{fontSize: '0.88rem', fontWeight: 800, color: '#fff'}}>$4.00 USDT</div>
+                    <div style={{fontSize: '0.88rem', fontWeight: 800, color: '#10b981'}}>
+                      ${(dualBotStatus?.bots?.[0]?.current_balance ?? 1.45).toFixed(2)} USDT
+                    </div>
                   </div>
                   <div style={{background: 'rgba(255,255,255,0.02)', padding: '0.5rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)'}}>
                     <div style={{fontSize: '0.65rem', color: 'var(--text-muted)'}}>SURVIVAL TARGET</div>
@@ -4139,9 +4141,9 @@ function App() {
 
                 <div style={{display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.5rem', marginBottom: '0.8rem', textAlign: 'center'}}>
                   <div style={{background: 'rgba(255,255,255,0.02)', padding: '0.5rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)'}}>
-                    <div style={{fontSize: '0.65rem', color: 'var(--text-muted)'}}>UNIVERSE COVERAGE</div>
+                    <div style={{fontSize: '0.65rem', color: 'var(--text-muted)'}}>CAPITAL ALLOCATED</div>
                     <div style={{fontSize: '0.88rem', fontWeight: 800, color: '#00f0ff'}}>
-                      {universalIntelligence?.universe?.length || 28} Coins
+                      ${(dualBotStatus?.bots?.[1]?.current_balance ?? 1.20).toFixed(2)} USDT
                     </div>
                   </div>
                   <div style={{background: 'rgba(255,255,255,0.02)', padding: '0.5rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)'}}>
@@ -4180,27 +4182,36 @@ function App() {
                     📡
                   </div>
                   <div>
-                    <div style={{fontSize: '0.92rem', fontWeight: 800, color: '#10b981', letterSpacing: '0.05em'}}>
-                      LIVE SPOT EXECUTION RADAR & ACTIVE POSITION TELEMETRY
-                    </div>
-                    <div style={{fontSize: '0.74rem', color: 'var(--text-muted)'}}>
-                      Real Binance Spot Orders (Zero Simulated) — Real-time Trailing Stop & Profit Locking
+                    <h3 style={{margin: 0, fontSize: '1.05rem', fontWeight: 800, color: '#fff', display: 'flex', alignItems: 'center', gap: '8px'}}>
+                      LIVE SPOT EXECUTION RADAR
+                      <span style={{
+                        fontSize: '0.68rem', fontWeight: 800, padding: '2px 8px', borderRadius: '4px',
+                        background: 'rgba(16,185,129,0.2)', color: '#10b981', border: '1px solid rgba(16,185,129,0.4)'
+                      }}>
+                        ● LIVE STREAMING
+                      </span>
+                    </h3>
+                    <div style={{fontSize: '0.72rem', color: 'var(--text-muted)'}}>
+                      Instant telemetry for all open real Binance spot positions with trailing profit locks
                     </div>
                   </div>
                 </div>
-                <div style={{fontSize: '0.74rem', color: 'var(--text-dim)'}}>
-                  Auto-updated every tick | Protection: 15m Stagnation Breaker
+                <div style={{display: 'flex', alignItems: 'center', gap: '8px'}}>
+                  <span style={{fontSize: '0.72rem', color: 'var(--text-dim)'}}>Slot Capacity:</span>
+                  <span style={{fontSize: '0.78rem', fontWeight: 800, color: '#10b981'}}>
+                    {dualBotStatus?.total_spots_active || 0} / {dualBotStatus?.max_slots || 3} Active
+                  </span>
                 </div>
               </div>
 
               {(!dualBotStatus?.active_spots || dualBotStatus.active_spots.length === 0) ? (
                 <div style={{
-                  textAlign: 'center', padding: '2rem', background: 'rgba(16,185,129,0.03)',
-                  border: '1px dashed rgba(16,185,129,0.25)', borderRadius: '10px'
+                  padding: '2.5rem 1rem', textAlign: 'center', background: 'rgba(255,255,255,0.01)',
+                  borderRadius: '10px', border: '1px dashed rgba(255,255,255,0.08)'
                 }}>
-                  <div className="radar-badge-pulse" style={{marginBottom: '0.8rem'}}>📡</div>
-                  <div style={{fontWeight: 700, fontSize: '0.95rem', color: '#10b981', marginBottom: '4px'}}>
-                    Radar Actively Scanning Universal Market
+                  <div style={{fontSize: '2rem', marginBottom: '0.5rem'}}>📡</div>
+                  <div style={{fontWeight: 700, fontSize: '0.92rem', color: '#fff', marginBottom: '0.3rem'}}>
+                    Radar Scanning... No Active Real Spot Positions
                   </div>
                   <div style={{fontSize: '0.78rem', color: 'var(--text-muted)', maxWidth: '500px', margin: '0 auto'}}>
                     Capital is safely preserved in USDT. Bot 1 and Bot 2 are actively reading 20-indicator confluence across 30+ crypto pairs. Once high-conviction setup aligns, live orders execute instantly.
@@ -4225,9 +4236,12 @@ function App() {
                               <span style={{fontWeight: 900, fontSize: '1.05rem', color: '#fff'}}>{spot.symbol}</span>
                               <span style={{
                                 marginLeft: '6px', fontSize: '0.68rem', fontWeight: 800, padding: '2px 6px',
-                                borderRadius: '4px', background: 'rgba(16,185,129,0.2)', color: '#10b981'
+                                borderRadius: '4px',
+                                background: spot.bot_id === 'BOT-002-ALPHA' ? 'rgba(0,240,255,0.2)' : 'rgba(16,185,129,0.2)',
+                                color: spot.bot_id === 'BOT-002-ALPHA' ? '#00f0ff' : '#10b981',
+                                border: spot.bot_id === 'BOT-002-ALPHA' ? '1px solid rgba(0,240,255,0.4)' : '1px solid rgba(16,185,129,0.4)'
                               }}>
-                                SPOT BUY
+                                {spot.bot_id === 'BOT-002-ALPHA' ? '⚡ ALPHA HUNTER' : '🎯 SNIPER'}
                               </span>
                             </div>
                           </div>

@@ -321,8 +321,9 @@ def create_dual_bots():
             "bot_type": "CONSERVATIVE_SNIPER",
             "display_name": "Sniper #1 (Conservative Institutional)",
             "generation": 1,
-            "starting_capital": STARTING_CAPITAL,
-            "current_balance": STARTING_CAPITAL,
+            "starting_capital": 1.45,
+            "current_balance": 1.45,
+            "allocated_capital": 1.45,
             "daily_pnl": 0.0,
             "daily_target": DAILY_TARGET_USD,
             "status": STATUS_ACTIVE,
@@ -337,7 +338,7 @@ def create_dual_bots():
             "created_at": now.isoformat(),
             "deadline_at": deadline.isoformat(),
             "deadline_epoch": int(deadline.timestamp()),
-            "thought": "Hunting 4/5 confluence setups on major pairs (BTC, ETH, top alts). Strict capital preservation active."
+            "thought": "🎯 Sniper armed with $1.45 USDT. Hunting 4/5 confluence setups on Binance Spot."
         }
         
         bot_2 = {
@@ -346,8 +347,9 @@ def create_dual_bots():
             "bot_type": "AGGRESSIVE_ALPHA",
             "display_name": "Alpha Hunter #2 (Momentum & News Scalp)",
             "generation": 1,
-            "starting_capital": STARTING_CAPITAL,
-            "current_balance": STARTING_CAPITAL,
+            "starting_capital": 1.20,
+            "current_balance": 1.20,
+            "allocated_capital": 1.20,
             "daily_pnl": 0.0,
             "daily_target": DAILY_TARGET_USD,
             "status": STATUS_ACTIVE,
@@ -357,18 +359,37 @@ def create_dual_bots():
             "winning_trades": 0,
             "losing_trades": 0,
             "confluence_required": 3,
-            "min_sentiment": 0.15,
+            "min_sentiment": 0.05,
             "risk_mode": "AGGRESSIVE",
             "created_at": now.isoformat(),
             "deadline_at": deadline.isoformat(),
             "deadline_epoch": int(deadline.timestamp()),
-            "thought": "Scanning universal meme & altcoin universe for breakout surges & positive news buzz. Fast compounding scalp mode."
+            "thought": "⚡ Allocated $1.20 USDT! Alpha Hunter armed & hunting high-velocity breakouts on 28+ universal coins!"
         }
         
         swarm_bots["BOT-001-SNIPER"] = bot_1
         swarm_bots["BOT-002-ALPHA"] = bot_2
         swarm_stats["active_bots"] = 2
         return [bot_1, bot_2]
+
+
+def allocate_bot_capital(bot_id: str, amount: float) -> dict:
+    """Explicitly allocate real or target capital to a specific bot (e.g. $1.20 to Alpha Hunter)."""
+    with swarm_lock:
+        cap = max(0.50, round(float(amount), 2))
+        ensure_dual_bots()
+        if bot_id in swarm_bots:
+            bot = swarm_bots[bot_id]
+            bot["starting_capital"] = cap
+            bot["current_balance"] = cap
+            bot["allocated_capital"] = cap
+            bot["status"] = STATUS_ACTIVE
+            if "ALPHA" in bot_id:
+                bot["thought"] = f"⚡ Allocated ${cap:.2f} USDT! Alpha Hunter armed & scanning 28+ universal coins for momentum scalps!"
+            else:
+                bot["thought"] = f"🎯 Allocated ${cap:.2f} USDT! Sniper armed & scanning for institutional 4/5 confluence!"
+            return bot
+        return {}
 
 
 def ensure_dual_bots():

@@ -1503,6 +1503,23 @@ def get_dual_bot_status_endpoint():
     }
 
 
+class BotCapitalAllocationRequest(BaseModel):
+    bot_id: str
+    amount: float
+
+
+@app.post("/api/bots/allocate")
+def allocate_bot_capital_endpoint(req: BotCapitalAllocationRequest):
+    """Allocates dedicated spot trading capital to a specific bot (e.g. $1.20 to BOT-002-ALPHA)."""
+    updated_bot = bm.allocate_bot_capital(req.bot_id, req.amount)
+    return {
+        "success": True,
+        "bot_id": req.bot_id,
+        "allocated_capital": req.amount,
+        "bot": updated_bot
+    }
+
+
 @app.get("/api/market/chart_indicators/{symbol:path}")
 def get_coin_chart_indicators(symbol: str):
     """Computes the complete institutional 20-indicator matrix for any selected coin."""
@@ -2031,16 +2048,20 @@ async def swarm_trading_loop():
                         sell_res = exchange_connector.place_market_order(symbol=sym, side='SELL')
                         if sell_res.get('success'):
                             mem_id = active_real_pos.get("memory_trade_id")
+                            owner_bot = active_real_pos.get("bot_id") or bot_id
+                            cost_val = float(active_real_pos.get("cost_usd", 1.20) or 1.20)
                             safe_record_trade_exit(sym, mem_id, live_p, "QUICK_PROFIT_LOCK",
                                                    highest_p=updated_pos.get("highest_price"),
                                                    lowest_p=updated_pos.get("lowest_price", entry_p))
                             bm.remove_real_position(sym)
                             quick_msg = f"⚡ INSTANT QUICK-PROFIT LOCKED! Sold {sym} @ ${live_p:.8f} (+{pnl_pct:.2f}% | +${pnl_usd:.4f} USD) | {stall_reason}"
                             with bm.swarm_lock:
-                                if bot_id in bm.swarm_bots:
-                                    bm.swarm_bots[bot_id]["thought"] = quick_msg
-                                    bm.swarm_bots[bot_id]["winning_trades"] += 1
-                                    bm.swarm_bots[bot_id]["daily_pnl"] += pnl_usd
+                                if owner_bot in bm.swarm_bots:
+                                    bm.swarm_bots[owner_bot]["thought"] = quick_msg
+                                    bm.swarm_bots[owner_bot]["current_balance"] = round(bm.swarm_bots[owner_bot].get("current_balance", 0.0) + cost_val + pnl_usd, 4)
+                                    bm.swarm_bots[owner_bot]["winning_trades"] += 1
+                                    bm.swarm_bots[owner_bot]["daily_pnl"] += pnl_usd
+                                    bm.swarm_bots[owner_bot]["active_pair"] = None
                             for conn in list(active_connections):
                                 try:
                                     await conn.send_json({"log": quick_msg, "swarm_update": True})
@@ -2053,16 +2074,20 @@ async def swarm_trading_loop():
                         sell_res = exchange_connector.place_market_order(symbol=sym, side='SELL')
                         if sell_res.get('success'):
                             mem_id = active_real_pos.get("memory_trade_id")
+                            owner_bot = active_real_pos.get("bot_id") or bot_id
+                            cost_val = float(active_real_pos.get("cost_usd", 1.20) or 1.20)
                             safe_record_trade_exit(sym, mem_id, live_p, "TAKE_PROFIT",
                                                    highest_p=updated_pos.get("highest_price"),
                                                    lowest_p=updated_pos.get("lowest_price", entry_p))
                             bm.remove_real_position(sym)
                             profit_msg = f"🏆 REAL SPOT TAKE-PROFIT HIT! Sold {sym} @ ${live_p:.8f} (+{pnl_pct:.2f}% | +${pnl_usd:.4f} USD) | Binance Profit Locked!"
                             with bm.swarm_lock:
-                                if bot_id in bm.swarm_bots:
-                                    bm.swarm_bots[bot_id]["thought"] = profit_msg
-                                    bm.swarm_bots[bot_id]["winning_trades"] += 1
-                                    bm.swarm_bots[bot_id]["daily_pnl"] += pnl_usd
+                                if owner_bot in bm.swarm_bots:
+                                    bm.swarm_bots[owner_bot]["thought"] = profit_msg
+                                    bm.swarm_bots[owner_bot]["current_balance"] = round(bm.swarm_bots[owner_bot].get("current_balance", 0.0) + cost_val + pnl_usd, 4)
+                                    bm.swarm_bots[owner_bot]["winning_trades"] += 1
+                                    bm.swarm_bots[owner_bot]["daily_pnl"] += pnl_usd
+                                    bm.swarm_bots[owner_bot]["active_pair"] = None
                             for conn in list(active_connections):
                                 try:
                                     await conn.send_json({"log": profit_msg, "swarm_update": True})
@@ -2076,6 +2101,8 @@ async def swarm_trading_loop():
                         if sell_res.get('success'):
                             is_win = pnl_pct >= 0
                             mem_id = active_real_pos.get("memory_trade_id")
+                            owner_bot = active_real_pos.get("bot_id") or bot_id
+                            cost_val = float(active_real_pos.get("cost_usd", 1.20) or 1.20)
                             exit_reason = "TRAILING_PROFIT" if is_win else "STOP_LOSS"
                             safe_record_trade_exit(sym, mem_id, live_p, exit_reason,
                                                    highest_p=updated_pos.get("highest_price"),
@@ -2084,13 +2111,15 @@ async def swarm_trading_loop():
                             sl_tag = "🎉 TRAILING PROFIT SECURED" if is_win else "🛡️ REAL SPOT STOP-LOSS TRIGGERED"
                             sl_msg = f"{sl_tag}: Sold {sym} @ ${live_p:.8f} ({pnl_pct:+.2f}% | {pnl_usd:+.4f} USD) to protect capital."
                             with bm.swarm_lock:
-                                if bot_id in bm.swarm_bots:
-                                    bm.swarm_bots[bot_id]["thought"] = sl_msg
+                                if owner_bot in bm.swarm_bots:
+                                    bm.swarm_bots[owner_bot]["thought"] = sl_msg
+                                    bm.swarm_bots[owner_bot]["current_balance"] = round(bm.swarm_bots[owner_bot].get("current_balance", 0.0) + cost_val + pnl_usd, 4)
                                     if is_win:
-                                        bm.swarm_bots[bot_id]["winning_trades"] += 1
+                                        bm.swarm_bots[owner_bot]["winning_trades"] += 1
                                     else:
-                                        bm.swarm_bots[bot_id]["losing_trades"] += 1
-                                    bm.swarm_bots[bot_id]["daily_pnl"] += pnl_usd
+                                        bm.swarm_bots[owner_bot]["losing_trades"] += 1
+                                    bm.swarm_bots[owner_bot]["daily_pnl"] += pnl_usd
+                                    bm.swarm_bots[owner_bot]["active_pair"] = None
                             for conn in list(active_connections):
                                 try:
                                     await conn.send_json({"log": sl_msg, "swarm_update": True})
@@ -2124,17 +2153,19 @@ async def swarm_trading_loop():
                         sell_res = exchange_connector.place_market_order(symbol=sym, side='SELL')
                         if sell_res.get('success'):
                             mem_id = active_real_pos.get("memory_trade_id")
+                            owner_bot = active_real_pos.get("bot_id") or bot_id
+                            cost_val = float(active_real_pos.get("cost_usd", 1.20) or 1.20)
                             safe_record_trade_exit(sym, mem_id, live_p, "STAGNATION_TIMEOUT",
                                                    highest_p=updated_pos.get("highest_price"),
                                                    lowest_p=updated_pos.get("lowest_price", entry_p))
                             bm.remove_real_position(sym)
                             stag_msg = f"⏰ 25-MIN STAGNATION TIMEOUT: Sold {sym} @ ${live_p:.8f} ({pnl_pct:+.2f}%) to free slot for high-velocity coins."
-                            for conn in list(active_connections):
-                                try:
-                                    await conn.send_json({"log": stag_msg, "swarm_update": True})
-                                except Exception:
-                                    pass
-                            continue
+                            with bm.swarm_lock:
+                                if owner_bot in bm.swarm_bots:
+                                    bm.swarm_bots[owner_bot]["thought"] = stag_msg
+                                    bm.swarm_bots[owner_bot]["current_balance"] = round(bm.swarm_bots[owner_bot].get("current_balance", 0.0) + cost_val + pnl_usd, 4)
+                                    bm.swarm_bots[owner_bot]["daily_pnl"] += pnl_usd
+                                    bm.swarm_bots[owner_bot]["active_pair"] = None
 
                     # D. POSITION ACTIVE: HOLDING & MONITORING
                     else:
@@ -2188,6 +2219,12 @@ async def swarm_trading_loop():
                                 best_features = None
                                 opp_map = {o["pair"]: o for o in cached_opps} if cached_opps else {}
                                 loop = asyncio.get_event_loop()
+
+                                b2 = bm.swarm_bots.get("BOT-002-ALPHA", {})
+                                b1 = bm.swarm_bots.get("BOT-001-SNIPER", {})
+                                b2_bal = float(b2.get("current_balance", 1.20) or 1.20)
+                                b1_bal = float(b1.get("current_balance", 1.45) or 1.45)
+
                                 for cp in candidate_pairs:
                                     if cp in current_symbols:
                                         continue  # Already holding this pair!
@@ -2202,18 +2239,39 @@ async def swarm_trading_loop():
                                         chart_analysis = chart_reader.analyze_chart(df)
                                         c_score = chart_analysis.get('confluence_score', 0)
                                         sent_val = float(opp_map.get(cp, {}).get("sentiment", opp_map.get(cp, {}).get("sentiment_score", 0.0)) or 0.0)
+                                        vol_r = float(chart_analysis.get('metrics', {}).get('vol_ratio', 1.0) or 1.0)
+                                        is_green_c = bool(chart_analysis.get('metrics', {}).get('is_green', False))
                                         
                                         # Bot 1 (Sniper): requires 4/5 confluence
-                                        # Bot 2 (Alpha Hunter): allows 3/5 with volume or positive news
                                         is_sniper_approved = (chart_analysis.get('signal') == 'BUY' and c_score >= 4)
-                                        is_alpha_approved = (c_score >= 3 and (sent_val >= 0.10 or chart_analysis.get('metrics', {}).get('vol_ratio', 1.0) >= 1.15))
                                         
-                                        if not (is_sniper_approved or is_alpha_approved):
+                                        # Bot 2 (Alpha Hunter): High-velocity breakout scalper
+                                        is_alpha_approved = (
+                                            (c_score >= 2 and (sent_val >= 0.0 or vol_r >= 1.05 or is_green_c)) or
+                                            (c_score >= 3)
+                                        )
+
+                                        target_bot_id = None
+                                        target_bot_name = None
+                                        target_size = 0.0
+
+                                        # Alpha Hunter prioritized for user's $1.20 USDT allocation
+                                        if is_alpha_approved and b2_bal >= 1.05 and free_usdt >= 1.05:
+                                            target_bot_id = "BOT-002-ALPHA"
+                                            target_bot_name = "Alpha Hunter #2 (Momentum Scalp)"
+                                            target_size = round(min(b2_bal, free_usdt, 1.20), 2)
+                                        elif is_sniper_approved and b1_bal >= 1.05 and free_usdt >= 1.05:
+                                            target_bot_id = "BOT-001-SNIPER"
+                                            target_bot_name = "Sniper #1 (Conservative Institutional)"
+                                            target_size = round(min(b1_bal, free_usdt, 1.45), 2)
+
+                                        if not target_bot_id or target_size < 1.05:
                                             continue
 
                                         ml_sig, ml_cf = strategy.generate_signals(df)
+                                        min_cf = 0.65 if target_bot_id == "BOT-002-ALPHA" else 0.70
                                         
-                                        if (ml_sig == "BUY" or is_alpha_approved) and ml_cf >= 0.68:
+                                        if (ml_sig in ["BUY", "HOLD"] or target_bot_id == "BOT-002-ALPHA") and ml_cf >= min_cf:
                                             # Extract market features for self-learning memory
                                             feat_df = strategy._compute_features(df)
                                             feat_df.dropna(inplace=True)
@@ -2233,14 +2291,14 @@ async def swarm_trading_loop():
                                             
                                             # Self-learning adaptive gate: check coin reputation + learned thresholds
                                             should_trade, gate_reason = tmem.should_take_trade(cp, ml_cf, entry_features)
-                                            if not should_trade:
+                                            if not should_trade and target_bot_id == "BOT-001-SNIPER":
                                                 print(f"[SelfLearn] Skipping {cp}: {gate_reason}")
                                                 continue
                                             
                                             # Blend confidence with self-learned outcome model
                                             blended_cf = tmem.get_blended_confidence(ml_cf, entry_features)
                                             
-                                            best_real_opp = (cp, cp_price, blended_cf, chart_analysis)
+                                            best_real_opp = (cp, cp_price, blended_cf, chart_analysis, target_bot_id, target_bot_name, target_size)
                                             best_features = entry_features
                                             break
                                     except Exception as scan_err:
@@ -2248,11 +2306,11 @@ async def swarm_trading_loop():
                                         continue
 
                                 if best_real_opp and best_features:
-                                    r_pair, r_price, r_conf, r_chart = best_real_opp
+                                    r_pair, r_price, r_conf, r_chart, r_bot_id, r_bot_name, r_size = best_real_opp
                                     buy_res = exchange_connector.place_market_order(
                                         symbol=r_pair,
                                         side='BUY',
-                                        usdt_amount=trade_size_usd
+                                        usdt_amount=r_size
                                     )
                                     if buy_res.get('success'):
                                         fill_p = float(buy_res.get('price', r_price))
@@ -2265,18 +2323,20 @@ async def swarm_trading_loop():
                                         try:
                                             mem_trade_id = tmem.record_entry(
                                                 symbol=r_pair, entry_price=fill_p,
-                                                cost_usd=trade_size_usd, ml_confidence=r_conf,
+                                                cost_usd=r_size, ml_confidence=r_conf,
                                                 market_features_dict=best_features
                                             )
                                         except Exception as mem_err:
                                             print(f"[TradeMemory] Entry record error: {mem_err}")
                                         
                                         is_runner = bool(r_chart.get('is_super_conviction', False))
-                                        c_score = int(r_chart.get('confluence_score', 4))
+                                        c_score = int(r_chart.get('confluence_score', 3))
                                         new_pos = {
                                             "symbol": r_pair,
+                                            "bot_id": r_bot_id,
+                                            "bot_name": r_bot_name,
                                             "entry_price": fill_p,
-                                            "cost_usd": trade_size_usd,
+                                            "cost_usd": r_size,
                                             "target_price": target_price,
                                             "stop_loss_price": stop_price,
                                             "tp_pct": learned_tp,
@@ -2292,12 +2352,18 @@ async def swarm_trading_loop():
                                             "confluence_score": c_score
                                         }
                                         bm.add_real_position(new_pos)
+                                        with bm.swarm_lock:
+                                            if r_bot_id in bm.swarm_bots:
+                                                bm.swarm_bots[r_bot_id]["current_balance"] = max(0.0, round(bm.swarm_bots[r_bot_id]["current_balance"] - r_size, 4))
+                                                bm.swarm_bots[r_bot_id]["active_pair"] = r_pair
+                                                bm.swarm_bots[r_bot_id]["thought"] = f"⚡ REAL SPOT OPEN on {r_pair} @ ${fill_p:.8f} (${r_size:.2f} USDT). Hunting target!"
+
                                         tp_display = round(learned_tp * 100, 1)
                                         sl_display = round(learned_sl * 100, 1)
-                                        type_tag = "🚀 SUPER-CONVICTION RUNNER" if is_runner else f"🎯 SNIPER BUY ({c_score}/5 Confirmations)"
+                                        type_tag = "🚀 SUPER-CONVICTION RUNNER" if is_runner else f"⚡ {r_bot_name} REAL SPOT BUY ({c_score}/5 Confirmations)"
                                         entry_log = (
                                             f"{type_tag} [{len(bm.get_active_real_positions())}/{bm.MAX_CONCURRENT_REAL_POSITIONS}]: "
-                                            f"{r_pair} @ ${fill_p:.8f} (${trade_size_usd} USDT deployed). "
+                                            f"{r_pair} @ ${fill_p:.8f} (${r_size:.2f} USDT deployed). "
                                             f"Target: ${target_price:.8f} (+{tp_display}%) | SL: ${stop_price:.8f} (-{sl_display}%) "
                                             f"[🧠 Self-Learn: Trade #{mem_trade_id}]"
                                         )
