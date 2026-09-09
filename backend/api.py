@@ -2175,9 +2175,18 @@ async def swarm_trading_loop():
                                 trade_size_usd = round(free_usdt - 0.01, 2)
                                 
                             if trade_size_usd >= 1.05:
-                                candidate_pairs = ["DOGE/USDT", "PEPE/USDT", "SHIB/USDT", "BONK/USDT", "WIF/USDT"]
+                                cached_opps = get_cached_opportunities()
+                                if cached_opps:
+                                    candidate_pairs = [o["pair"] for o in cached_opps if o.get("signal") in ["BUY", "HOLD"] and o.get("score", 0) >= 45][:5]
+                                else:
+                                    candidate_pairs = SWARM_TRADING_UNIVERSE[:5]
+                                
+                                if not candidate_pairs:
+                                    candidate_pairs = ["PEPE/USDT", "SOL/USDT", "DOGE/USDT", "SHIB/USDT", "BONK/USDT"]
+
                                 best_real_opp = None
                                 best_features = None
+                                loop = asyncio.get_event_loop()
                                 for cp in candidate_pairs:
                                     if cp in current_symbols:
                                         continue  # Already holding this pair!
@@ -2186,16 +2195,24 @@ async def swarm_trading_loop():
                                         continue
                                     try:
                                         s_inst = pair_streamers.get(cp) or DataStreamer(symbol=cp, timeframe="1m")
-                                        df = s_inst.fetch_historical_data(limit=60)
+                                        df = await loop.run_in_executor(None, s_inst.fetch_historical_data, 60)
                                         
-                                        # ─── DEEP MULTI-CONFLUENCE CHART READING ───────────
+                                        # ─── DUAL-BOT MULTI-CONFLUENCE CHART READING ───────
                                         chart_analysis = chart_reader.analyze_chart(df)
-                                        if chart_analysis.get('signal') != 'BUY' or chart_analysis.get('confluence_score', 0) < 4:
-                                            continue  # Reject pair if chart does not have at least 4/5 confirmations!
+                                        c_score = chart_analysis.get('confluence_score', 0)
+                                        sent_val = opp_map.get(cp, {}).get("sentiment_score", 0.0)
+                                        
+                                        # Bot 1 (Sniper): requires 4/5 confluence
+                                        # Bot 2 (Alpha Hunter): allows 3/5 with volume or positive news
+                                        is_sniper_approved = (chart_analysis.get('signal') == 'BUY' and c_score >= 4)
+                                        is_alpha_approved = (c_score >= 3 and (sent_val >= 0.10 or chart_analysis.get('vol_ratio', 1.0) >= 1.15))
+                                        
+                                        if not (is_sniper_approved or is_alpha_approved):
+                                            continue
 
                                         ml_sig, ml_cf = strategy.generate_signals(df)
                                         
-                                        if ml_sig == "BUY" and ml_cf >= 0.70:
+                                        if (ml_sig == "BUY" or is_alpha_approved) and ml_cf >= 0.68:
                                             # Extract market features for self-learning memory
                                             feat_df = strategy._compute_features(df)
                                             feat_df.dropna(inplace=True)

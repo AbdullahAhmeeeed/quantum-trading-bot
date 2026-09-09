@@ -8,7 +8,7 @@ from sklearn.ensemble import GradientBoostingClassifier
 
 class TradeMemory:
     def __init__(self, db_path="trade_memory.db"):
-        self.lock = threading.Lock()
+        self.lock = threading.RLock()
         self.db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), db_path)
         self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
@@ -285,7 +285,7 @@ class TradeMemory:
             b_wins = sum(1 for t in bracket_trades if t['pnl_pct'] > 0)
             b_winrate = b_wins / len(bracket_trades)
             if b_winrate < 0.35:
-                new_min_conf = min(new_min_conf + 0.03, 0.85)
+                new_min_conf = min(new_min_conf + 0.02, 0.75)
                 changes.append(f"Raised min confidence to {new_min_conf:.2f}")
 
         if not changes:
