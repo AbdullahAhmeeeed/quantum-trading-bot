@@ -100,9 +100,10 @@ SWARM_TRADING_UNIVERSE = [
     "APT/USDT", "LINK/USDT", "DOT/USDT", "LTC/USDT", "MATIC/USDT",
     # AI & DeFi Leaders
     "FET/USDT", "RENDER/USDT", "INJ/USDT", "AAVE/USDT", "UNI/USDT",
-    # High-Velocity Meme & Momentum Coins
+    # High-Velocity Momentum & Micro-Notional Coins
     "PEPE/USDT", "SHIB/USDT", "DOGE/USDT", "WIF/USDT", "BONK/USDT", 
-    "FLOKI/USDT", "NEIRO/USDT", "BOME/USDT"
+    "FLOKI/USDT", "NEIRO/USDT", "BOME/USDT", "PEOPLE/USDT", "1000SATS/USDT",
+    "MEME/USDT", "DOGS/USDT"
 ]
 
 # Bot autonomous trading state
@@ -2272,13 +2273,25 @@ async def swarm_trading_loop():
                                 
                             if trade_size_usd >= 1.05:
                                 cached_opps = get_cached_opportunities()
-                                if cached_opps:
-                                    candidate_pairs = [o["pair"] for o in cached_opps if o.get("signal") in ["BUY", "HOLD"] and o.get("score", 0) >= 45][:5]
-                                else:
-                                    candidate_pairs = SWARM_TRADING_UNIVERSE[:5]
+                                # Dynamic capital-aware universe filter:
+                                # Binance requires min $5.00 for BTC/ETH/SOL/XRP and min $1.00 for meme/micro pairs.
+                                # Filter candidate pairs that match current trade_size_usd and scan up to 15 diverse pairs.
+                                candidate_pairs = []
+                                markets_obj = getattr(exchange_connector, 'exchange', None)
+                                m_dict = getattr(markets_obj, 'markets', {}) or {}
+                                
+                                raw_candidates = [o["pair"] for o in cached_opps if o.get("signal") in ["BUY", "HOLD"]] if cached_opps else SWARM_TRADING_UNIVERSE
+                                for cp in raw_candidates:
+                                    min_cost = 5.0
+                                    if m_dict and cp in m_dict:
+                                        min_cost = float(m_dict[cp].get('limits', {}).get('cost', {}).get('min', 5.0) or 5.0)
+                                    if trade_size_usd >= (min_cost * 0.98):
+                                        candidate_pairs.append(cp)
+                                    if len(candidate_pairs) >= 15:
+                                        break
                                 
                                 if not candidate_pairs:
-                                    candidate_pairs = ["PEPE/USDT", "SOL/USDT", "DOGE/USDT", "SHIB/USDT", "BONK/USDT"]
+                                    candidate_pairs = ["PEPE/USDT", "DOGE/USDT", "FLOKI/USDT", "BOME/USDT", "SHIB/USDT", "BONK/USDT", "WIF/USDT", "PEOPLE/USDT", "NEIRO/USDT"]
 
                                 best_real_opp = None
                                 best_features = None

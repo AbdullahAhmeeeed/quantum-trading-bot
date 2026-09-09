@@ -15,17 +15,15 @@ TRADING_UNIVERSE = [
     "APT/USDT", "LINK/USDT", "DOT/USDT", "LTC/USDT", "MATIC/USDT",
     # AI & DeFi Leaders
     "FET/USDT", "RENDER/USDT", "INJ/USDT", "AAVE/USDT", "UNI/USDT",
-    # High-Velocity Meme & Momentum Coins
+    # High-Velocity Momentum & Micro-Notional Coins
     "PEPE/USDT", "SHIB/USDT", "DOGE/USDT", "WIF/USDT", "BONK/USDT", 
-    "FLOKI/USDT", "NEIRO/USDT", "BOME/USDT"
+    "FLOKI/USDT", "NEIRO/USDT", "BOME/USDT", "PEOPLE/USDT", "1000SATS/USDT",
+    "MEME/USDT", "DOGS/USDT"
 ]
 
 _opportunity_cache: Dict[str, dict] = {}
 _cache_lock = threading.Lock()
 _prev_prices: Dict[str, float] = {}
-
-MEME_COINS = {"DOGE/USDT", "SHIB/USDT", "PEPE/USDT", "WIF/USDT", "BONK/USDT", "FLOKI/USDT", "NEIRO/USDT", "BOME/USDT"}
-
 
 _price_history: Dict[str, list] = {}
 
@@ -49,14 +47,13 @@ def _score_opportunity(pair: str, price: float, prev_price: float, volume: float
 
     pct_change = ((price - baseline_price) / baseline_price) * 100.0
 
-    # Institutional quantitative momentum score (0 to 100)
-    base_score = 45.0
+    # Institutional quantitative momentum score (0 to 100) — UNBIASED purely on price action & volume
+    base_score = 50.0
     mom_boost = min(abs(pct_change) * 140.0, 35.0)
     vol_bonus = min(volume / 8.0, 15.0)
-    meme_bonus = 12.0 if pair in MEME_COINS else 4.0
     sentiment_bonus = max(-15.0, min(sentiment_score * 30.0, 15.0))
     
-    score = min(max(base_score + mom_boost + vol_bonus + meme_bonus + sentiment_bonus, 5.0), 98.0)
+    score = min(max(base_score + mom_boost + vol_bonus + sentiment_bonus, 5.0), 98.0)
 
     # Clean directional breakout signal without random fallbacks
     if pct_change >= 0.005 and score >= 65.0:
