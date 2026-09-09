@@ -601,6 +601,24 @@ def sync_open_positions_from_exchange():
                 adaptive = tmem.get_adaptive_params()
                 learned_tp = adaptive.get("tp_pct", 0.018)
                 learned_sl = adaptive.get("sl_pct", 0.008)
+
+                # Look up existing open trade in trade_memory or create new journal record
+                mem_trade_id = None
+                try:
+                    with tmem.lock:
+                        cur = tmem.conn.cursor()
+                        cur.execute("SELECT id FROM trade_journal WHERE symbol = ? AND is_open = 1 ORDER BY id DESC LIMIT 1", (symbol,))
+                        row = cur.fetchone()
+                        if row:
+                            mem_trade_id = row['id']
+                    if not mem_trade_id:
+                        mem_trade_id = tmem.record_entry(
+                            symbol=symbol, entry_price=entry_p, cost_usd=round(usd_val, 4),
+                            ml_confidence=0.80, market_features_dict={"recovered_from_sync": 1.0}
+                        )
+                except Exception as mem_link_err:
+                    print(f"[Sync] Memory linkage notice: {mem_link_err}")
+
                 pos = {
                     "symbol": symbol,
                     "entry_price": entry_p,
@@ -615,14 +633,31 @@ def sync_open_positions_from_exchange():
                     "opened_at": datetime.now(timezone.utc).isoformat(),
                     "trailing_stop_active": False,
                     "status": "HOLDING",
-                    "memory_trade_id": None,
+                    "memory_trade_id": mem_trade_id,
                     "is_runner": False,
                     "confluence_score": 4
                 }
                 bm.add_real_position(pos)
-                print(f"[Sync] Recovered Binance spot holding {symbol} ({qty} coins @ ${entry_p}) into slot manager.")
+                print(f"[Sync] Recovered Binance spot holding {symbol} ({qty} coins @ ${entry_p}) into slot manager (Trade #{mem_trade_id}).")
     except Exception as e:
         print(f"[Sync] Notice: {e}")
+
+
+def safe_record_trade_exit(symbol: str, mem_id: Optional[int], exit_price: float, exit_reason: str, highest_p: float = None, lowest_p: float = None):
+    """Safely updates trade_journal ensuring no trade is left orphaned as is_open=1."""
+    try:
+        if not mem_id:
+            with tmem.lock:
+                cur = tmem.conn.cursor()
+                cur.execute("SELECT id FROM trade_journal WHERE symbol = ? AND is_open = 1 ORDER BY id DESC LIMIT 1", (symbol,))
+                row = cur.fetchone()
+                if row:
+                    mem_id = row['id']
+        if mem_id:
+            tmem.record_exit(mem_id, exit_price, exit_reason, highest_price=highest_p, lowest_price=lowest_p)
+            print(f"[TradeMemory] Successfully logged exit for {symbol} (Trade #{mem_id}) -> {exit_reason}")
+    except Exception as e:
+        print(f"[TradeMemory] Safe exit record error: {e}")
 
 
 @app.on_event("startup")
@@ -1626,13 +1661,9 @@ def manual_close_swarm_position(symbol: Optional[str] = None):
                 curr_p = active_engine.get_price(sym) if hasattr(active_engine, 'get_price') else entry_p
                 sell_res = active_engine.place_market_order(symbol=sym, side='SELL')
                 if sell_res.get("success"):
-                    if mem_id:
-                        try:
-                            tmem.record_exit(mem_id, curr_p or entry_p, "MANUAL_EXIT",
-                                             highest_price=pos.get("highest_price"),
-                                             lowest_price=pos.get("lowest_price", entry_p))
-                        except Exception as mem_err:
-                            print(f"[TradeMemory] Manual close error: {mem_err}")
+                    safe_record_trade_exit(sym, mem_id, curr_p or entry_p, "MANUAL_EXIT",
+                                           highest_p=pos.get("highest_price"),
+                                           lowest_p=pos.get("lowest_price", entry_p))
                     bm.remove_real_position(sym)
                     closed.append(sym)
                 else:
@@ -1645,11 +1676,7 @@ def manual_close_swarm_position(symbol: Optional[str] = None):
             except Exception as e:
                 errors.append(f"{sym}: {str(e)}")
         else:
-            if mem_id:
-                try:
-                    tmem.record_exit(mem_id, entry_p, "MANUAL_EXIT")
-                except Exception:
-                    pass
+            safe_record_trade_exit(sym, mem_id, entry_p, "MANUAL_EXIT")
             bm.remove_real_position(sym)
             closed.append(sym)
             
@@ -1831,13 +1858,9 @@ async def swarm_trading_loop():
                         sell_res = exchange_connector.place_market_order(symbol=sym, side='SELL')
                         if sell_res.get('success'):
                             mem_id = active_real_pos.get("memory_trade_id")
-                            if mem_id:
-                                try:
-                                    tmem.record_exit(mem_id, live_p, "QUICK_PROFIT_LOCK",
-                                                     highest_price=updated_pos.get("highest_price"),
-                                                     lowest_price=updated_pos.get("lowest_price", entry_p))
-                                except Exception as mem_err:
-                                    print(f"[TradeMemory] Quick-lock record error: {mem_err}")
+                            safe_record_trade_exit(sym, mem_id, live_p, "QUICK_PROFIT_LOCK",
+                                                   highest_p=updated_pos.get("highest_price"),
+                                                   lowest_p=updated_pos.get("lowest_price", entry_p))
                             bm.remove_real_position(sym)
                             quick_msg = f"⚡ INSTANT QUICK-PROFIT LOCKED! Sold {sym} @ ${live_p:.8f} (+{pnl_pct:.2f}% | +${pnl_usd:.4f} USD) | {stall_reason}"
                             with bm.swarm_lock:
@@ -1856,15 +1879,10 @@ async def swarm_trading_loop():
                     if live_p >= target_p:
                         sell_res = exchange_connector.place_market_order(symbol=sym, side='SELL')
                         if sell_res.get('success'):
-                            # Record exit in self-learning trade memory
                             mem_id = active_real_pos.get("memory_trade_id")
-                            if mem_id:
-                                try:
-                                    tmem.record_exit(mem_id, live_p, "TAKE_PROFIT",
-                                                     highest_price=updated_pos.get("highest_price"),
-                                                     lowest_price=updated_pos.get("lowest_price", entry_p))
-                                except Exception as mem_err:
-                                    print(f"[TradeMemory] TP exit record error: {mem_err}")
+                            safe_record_trade_exit(sym, mem_id, live_p, "TAKE_PROFIT",
+                                                   highest_p=updated_pos.get("highest_price"),
+                                                   lowest_p=updated_pos.get("lowest_price", entry_p))
                             bm.remove_real_position(sym)
                             profit_msg = f"🏆 REAL SPOT TAKE-PROFIT HIT! Sold {sym} @ ${live_p:.8f} (+{pnl_pct:.2f}% | +${pnl_usd:.4f} USD) | Binance Profit Locked!"
                             with bm.swarm_lock:
@@ -1883,17 +1901,12 @@ async def swarm_trading_loop():
                     elif live_p <= stop_p:
                         sell_res = exchange_connector.place_market_order(symbol=sym, side='SELL')
                         if sell_res.get('success'):
-                            # Record exit in self-learning trade memory
                             is_win = pnl_pct >= 0
                             mem_id = active_real_pos.get("memory_trade_id")
                             exit_reason = "TRAILING_PROFIT" if is_win else "STOP_LOSS"
-                            if mem_id:
-                                try:
-                                    tmem.record_exit(mem_id, live_p, exit_reason,
-                                                     highest_price=updated_pos.get("highest_price"),
-                                                     lowest_price=updated_pos.get("lowest_price", entry_p))
-                                except Exception as mem_err:
-                                    print(f"[TradeMemory] SL exit record error: {mem_err}")
+                            safe_record_trade_exit(sym, mem_id, live_p, exit_reason,
+                                                   highest_p=updated_pos.get("highest_price"),
+                                                   lowest_p=updated_pos.get("lowest_price", entry_p))
                             bm.remove_real_position(sym)
                             sl_tag = "🎉 TRAILING PROFIT SECURED" if is_win else "🛡️ REAL SPOT STOP-LOSS TRIGGERED"
                             sl_msg = f"{sl_tag}: Sold {sym} @ ${live_p:.8f} ({pnl_pct:+.2f}% | {pnl_usd:+.4f} USD) to protect capital."
@@ -1937,15 +1950,10 @@ async def swarm_trading_loop():
                     if is_stagnant:
                         sell_res = exchange_connector.place_market_order(symbol=sym, side='SELL')
                         if sell_res.get('success'):
-                            # Record exit in self-learning trade memory
                             mem_id = active_real_pos.get("memory_trade_id")
-                            if mem_id:
-                                try:
-                                    tmem.record_exit(mem_id, live_p, "STAGNATION_TIMEOUT",
-                                                     highest_price=updated_pos.get("highest_price"),
-                                                     lowest_price=updated_pos.get("lowest_price", entry_p))
-                                except Exception as mem_err:
-                                    print(f"[TradeMemory] Stagnation exit record error: {mem_err}")
+                            safe_record_trade_exit(sym, mem_id, live_p, "STAGNATION_TIMEOUT",
+                                                   highest_p=updated_pos.get("highest_price"),
+                                                   lowest_p=updated_pos.get("lowest_price", entry_p))
                             bm.remove_real_position(sym)
                             stag_msg = f"⏰ 25-MIN STAGNATION TIMEOUT: Sold {sym} @ ${live_p:.8f} ({pnl_pct:+.2f}%) to free slot for high-velocity coins."
                             for conn in list(active_connections):
