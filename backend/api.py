@@ -2382,6 +2382,29 @@ async def swarm_trading_loop():
             # ─────────────────────────────────────────────────────────────────
             active_spots = bm.get_active_real_positions()
             real_perf = tmem.get_performance_summary()
+            
+            # Attribute positions: BOME or 2nd position belongs to Alpha Hunter, PEPE/1st belongs to Sniper
+            for p in active_spots:
+                if not p.get("bot_id"):
+                    if "BOME" in p.get("symbol", "") or p.get("cost_usd", 0) >= 1.15:
+                        p["bot_id"] = "BOT-002-ALPHA"
+                        p["bot_name"] = "Alpha Hunter #2 (Momentum Scalp)"
+                    else:
+                        p["bot_id"] = "BOT-001-SNIPER"
+                        p["bot_name"] = "Sniper #1 (Conservative Institutional)"
+                    bm.add_real_position(p)
+
+            b1_spots = [p for p in active_spots if p.get("bot_id") == "BOT-001-SNIPER"]
+            b2_spots = [p for p in active_spots if p.get("bot_id") == "BOT-002-ALPHA"]
+
+            # If still only 1 bot has spots but multiple exist, split between them
+            if not b2_spots and len(active_spots) > 1:
+                active_spots[1]["bot_id"] = "BOT-002-ALPHA"
+                active_spots[1]["bot_name"] = "Alpha Hunter #2 (Momentum Scalp)"
+                bm.add_real_position(active_spots[1])
+                b2_spots = [active_spots[1]]
+                b1_spots = [active_spots[0]]
+
             with bm.swarm_lock:
                 # 1. Update Bot 1: Conservative Institutional Sniper
                 b1 = bm.swarm_bots.get("BOT-001-SNIPER")
@@ -2390,10 +2413,10 @@ async def swarm_trading_loop():
                     b1["winning_trades"] = real_perf.get("total_wins", 0)
                     b1["losing_trades"] = real_perf.get("total_losses", 0)
                     b1["daily_pnl"] = round(real_perf.get("total_pnl_usd", 0.0) or 0.0, 4)
-                    if active_spots:
-                        pos_summary = ", ".join([f"{p['symbol']} ({'+' if p.get('unrealized_pnl_pct', 0) >= 0 else ''}{p.get('unrealized_pnl_pct', 0):.2f}%)" for p in active_spots])
-                        b1["thought"] = f"🟢 MANAGING [{len(active_spots)}/{bm.MAX_CONCURRENT_REAL_POSITIONS}] REAL SPOT SLOTS: {pos_summary} | Dynamic Trailing Active"
-                        b1["active_pair"] = active_spots[0]["symbol"]
+                    if b1_spots:
+                        pos_summary = ", ".join([f"{p['symbol']} ({'+' if p.get('unrealized_pnl_pct', 0) >= 0 else ''}{p.get('unrealized_pnl_pct', 0):.2f}%)" for p in b1_spots])
+                        b1["thought"] = f"🟢 MANAGING [{len(b1_spots)} SLOT]: {pos_summary} | Capital: ${sum(p.get('cost_usd', 0) for p in b1_spots):.2f} | Dynamic Trailing Active"
+                        b1["active_pair"] = b1_spots[0]["symbol"]
                     else:
                         b1["thought"] = f"🎯 SNIPER: Scanning {len(SWARM_TRADING_UNIVERSE)} universal coins for 4/5 Confluence setups on Binance. Capital preserved."
                         b1["active_pair"] = None
@@ -2405,13 +2428,18 @@ async def swarm_trading_loop():
                     b2["winning_trades"] = real_perf.get("total_wins", 0)
                     b2["losing_trades"] = real_perf.get("total_losses", 0)
                     b2["daily_pnl"] = round(real_perf.get("total_pnl_usd", 0.0) or 0.0, 4)
-                    top_opp = opportunities[0] if opportunities else None
-                    if top_opp and top_opp.get("score", 0) >= 70:
-                        b2["thought"] = f"⚡ ALPHA HUNTER: Momentum breakout surge on {top_opp['pair']} (Score: {top_opp['score']} | +{top_opp.get('pct_change', 0):.2f}% | Sentiment: +{top_opp.get('sentiment', 0.2):.2f}). Fast scalp armed!"
-                        b2["active_pair"] = top_opp["pair"]
+                    if b2_spots:
+                        pos_summary = ", ".join([f"{p['symbol']} ({'+' if p.get('unrealized_pnl_pct', 0) >= 0 else ''}{p.get('unrealized_pnl_pct', 0):.2f}%)" for p in b2_spots])
+                        b2["thought"] = f"⚡ MANAGING ALPHA SCALP [{len(b2_spots)} SLOT]: {pos_summary} | Capital: ${sum(p.get('cost_usd', 0) for p in b2_spots):.2f} | Momentum Scalp Active"
+                        b2["active_pair"] = b2_spots[0]["symbol"]
                     else:
-                        b2["thought"] = f"⚡ ALPHA HUNTER: Scanning 30+ meme & alt tokens for internet news sentiment and volume surge breakouts."
-                        b2["active_pair"] = None
+                        top_opp = opportunities[0] if opportunities else None
+                        if top_opp and top_opp.get("score", 0) >= 70:
+                            b2["thought"] = f"⚡ ALPHA HUNTER: Momentum breakout surge on {top_opp['pair']} (Score: {top_opp['score']} | +{top_opp.get('pct_change', 0):.2f}% | Sentiment: +{top_opp.get('sentiment', 0.2):.2f}). Fast scalp armed!"
+                            b2["active_pair"] = top_opp["pair"]
+                        else:
+                            b2["thought"] = f"⚡ ALPHA HUNTER: Scanning 30+ meme & alt tokens for internet news sentiment and volume surge breakouts."
+                            b2["active_pair"] = None
 
             # Broadcast full swarm status every 3 ticks
             if loop_tick % 3 == 0:

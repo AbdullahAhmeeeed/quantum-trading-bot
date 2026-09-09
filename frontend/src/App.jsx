@@ -3404,7 +3404,44 @@ function App() {
                 }}>
                   {dualBotStatus?.bots?.[1]?.thought || 'Hunting high-beta breakout surges across universal coins...'}
                 </div>
-                <div style={{marginTop: '0.6rem'}}>
+                {/* Active Scalp Indicator if Alpha Hunter has a live position */}
+                {(() => {
+                  const alphaSpot = dualBotStatus?.active_spots?.find(s => s.bot_id === 'BOT-002-ALPHA' || s.symbol === 'BOME/USDT');
+                  if (!alphaSpot) return null;
+                  const isProf = (alphaSpot.unrealized_pnl_pct || 0) >= 0;
+                  return (
+                    <div style={{
+                      marginTop: '0.4rem', padding: '0.35rem 0.6rem', borderRadius: '6px',
+                      background: 'rgba(0, 240, 255, 0.08)', border: '1px solid rgba(0, 240, 255, 0.3)',
+                      display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.72rem'
+                    }}>
+                      <div style={{display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 800, color: '#00f0ff'}}>
+                        <span className="live-indicator" style={{background: '#00f0ff', width: '6px', height: '6px'}} />
+                        <span>LIVE SCALP: {alphaSpot.symbol}</span>
+                      </div>
+                      <div style={{display: 'flex', alignItems: 'center', gap: '6px'}}>
+                        <span style={{fontWeight: 800, color: isProf ? '#10b981' : '#f43f5e'}}>
+                          {isProf ? '+' : ''}{alphaSpot.unrealized_pnl_pct?.toFixed(2)}%
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleClosePosition(alphaSpot.symbol)}
+                          disabled={closingPosition && closingSymbol === alphaSpot.symbol}
+                          style={{
+                            background: 'rgba(244,63,94,0.2)', border: '1px solid #f43f5e',
+                            color: '#f43f5e', borderRadius: '4px', padding: '1px 6px', fontSize: '0.65rem',
+                            fontWeight: 700, cursor: 'pointer'
+                          }}
+                          title="Sell current scalp to free $1.20 USDT for a fresh coin"
+                        >
+                          {closingPosition && closingSymbol === alphaSpot.symbol ? '...' : '⚡ Free & Re-hunt'}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                <div style={{marginTop: '0.6rem', display: 'flex', gap: '6px'}}>
                   <button
                     type="button"
                     onClick={() => {
@@ -3414,7 +3451,7 @@ function App() {
                       setShowBotAllocateModal(true);
                     }}
                     style={{
-                      width: '100%', padding: '6px 10px', borderRadius: '6px', border: '1px solid rgba(0, 240, 255, 0.4)',
+                      flex: 1, padding: '6px 10px', borderRadius: '6px', border: '1px solid rgba(0, 240, 255, 0.4)',
                       background: 'rgba(0, 240, 255, 0.15)', color: '#00f0ff', fontWeight: 900, fontSize: '0.75rem',
                       cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
                       boxShadow: '0 0 15px rgba(0, 240, 255, 0.25)'
@@ -4401,6 +4438,43 @@ function App() {
                   {dualBotStatus?.bots?.[1]?.thought || 'Hunting high-beta breakout surges across universal coins...'}
                 </div>
 
+                {/* Active Scalp Indicator if Alpha Hunter has a live position */}
+                {(() => {
+                  const alphaSpot = dualBotStatus?.active_spots?.find(s => s.bot_id === 'BOT-002-ALPHA' || s.symbol === 'BOME/USDT');
+                  if (!alphaSpot) return null;
+                  const isProf = (alphaSpot.unrealized_pnl_pct || 0) >= 0;
+                  return (
+                    <div style={{
+                      marginTop: '0.6rem', padding: '0.45rem 0.75rem', borderRadius: '6px',
+                      background: 'rgba(0, 240, 255, 0.08)', border: '1px solid rgba(0, 240, 255, 0.3)',
+                      display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.74rem'
+                    }}>
+                      <div style={{display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 800, color: '#00f0ff'}}>
+                        <span className="live-indicator" style={{background: '#00f0ff', width: '7px', height: '7px'}} />
+                        <span>LIVE SCALP: {alphaSpot.symbol}</span>
+                      </div>
+                      <div style={{display: 'flex', alignItems: 'center', gap: '8px'}}>
+                        <span style={{fontWeight: 800, color: isProf ? '#10b981' : '#f43f5e'}}>
+                          {isProf ? '+' : ''}{alphaSpot.unrealized_pnl_pct?.toFixed(2)}%
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleClosePosition(alphaSpot.symbol)}
+                          disabled={closingPosition && closingSymbol === alphaSpot.symbol}
+                          style={{
+                            background: 'rgba(244,63,94,0.2)', border: '1px solid #f43f5e',
+                            color: '#f43f5e', borderRadius: '4px', padding: '2px 8px', fontSize: '0.68rem',
+                            fontWeight: 700, cursor: 'pointer'
+                          }}
+                          title="Sell current scalp to free $1.20 USDT for a fresh coin"
+                        >
+                          {closingPosition && closingSymbol === alphaSpot.symbol ? '...' : '⚡ Free & Re-hunt'}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 <div style={{marginTop: '0.8rem', display: 'flex', gap: '8px'}}>
                   <button
                     type="button"
@@ -4489,11 +4563,11 @@ function App() {
                               <span style={{
                                 marginLeft: '6px', fontSize: '0.68rem', fontWeight: 800, padding: '2px 6px',
                                 borderRadius: '4px',
-                                background: spot.bot_id === 'BOT-002-ALPHA' ? 'rgba(0,240,255,0.2)' : 'rgba(16,185,129,0.2)',
-                                color: spot.bot_id === 'BOT-002-ALPHA' ? '#00f0ff' : '#10b981',
-                                border: spot.bot_id === 'BOT-002-ALPHA' ? '1px solid rgba(0,240,255,0.4)' : '1px solid rgba(16,185,129,0.4)'
+                                background: (spot.bot_id === 'BOT-002-ALPHA' || spot.symbol === 'BOME/USDT') ? 'rgba(0,240,255,0.2)' : 'rgba(16,185,129,0.2)',
+                                color: (spot.bot_id === 'BOT-002-ALPHA' || spot.symbol === 'BOME/USDT') ? '#00f0ff' : '#10b981',
+                                border: (spot.bot_id === 'BOT-002-ALPHA' || spot.symbol === 'BOME/USDT') ? '1px solid rgba(0,240,255,0.4)' : '1px solid rgba(16,185,129,0.4)'
                               }}>
-                                {spot.bot_id === 'BOT-002-ALPHA' ? '⚡ ALPHA HUNTER' : '🎯 SNIPER'}
+                                {(spot.bot_id === 'BOT-002-ALPHA' || spot.symbol === 'BOME/USDT') ? '⚡ ALPHA HUNTER #2' : '🎯 SNIPER #1'}
                               </span>
                             </div>
                           </div>

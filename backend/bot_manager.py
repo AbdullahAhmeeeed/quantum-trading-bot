@@ -28,7 +28,7 @@ swarm_stats = {
 }
 
 # Real Money Spot Trading Allocation Engine
-real_trading_active: bool = False
+real_trading_active: bool = True
 real_allocated_capital: float = 0.0
 
 DAILY_TARGET_USD = 100.0
@@ -375,7 +375,9 @@ def create_dual_bots():
 
 def allocate_bot_capital(bot_id: str, amount: float) -> dict:
     """Explicitly allocate real or target capital to a specific bot (e.g. $1.20 to Alpha Hunter)."""
+    global real_trading_active
     with swarm_lock:
+        real_trading_active = True
         cap = max(0.50, round(float(amount), 2))
         ensure_dual_bots()
         if bot_id in swarm_bots:
