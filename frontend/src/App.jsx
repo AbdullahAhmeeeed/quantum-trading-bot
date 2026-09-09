@@ -3332,7 +3332,12 @@ function App() {
                 <div style={{display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.4rem', marginBottom: '0.6rem', textAlign: 'center'}}>
                   <div style={{background: 'rgba(255,255,255,0.02)', padding: '0.4rem', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.05)'}}>
                     <div style={{fontSize: '0.62rem', color: 'var(--text-muted)'}}>CAPITAL ALLOCATED</div>
-                    <div style={{fontSize: '0.85rem', fontWeight: 800, color: '#10b981'}}>${(dualBotStatus?.bots?.[0]?.current_balance ?? 1.45).toFixed(2)} USDT</div>
+                    <div style={{fontSize: '0.85rem', fontWeight: 800, color: '#10b981'}}>
+                      {(() => {
+                        const sp = dualBotStatus?.active_spots?.find(s => s.bot_id === 'BOT-001-SNIPER' || s.symbol === 'PEPE/USDT');
+                        return `$${(sp ? sp.cost_usd : (dualBotStatus?.bots?.[0]?.current_balance ?? 1.08)).toFixed(2)} USDT`;
+                      })()}
+                    </div>
                   </div>
                   <div style={{background: 'rgba(255,255,255,0.02)', padding: '0.4rem', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.05)'}}>
                     <div style={{fontSize: '0.62rem', color: 'var(--text-muted)'}}>DAILY TARGET</div>
@@ -3350,12 +3355,50 @@ function App() {
                 }}>
                   {dualBotStatus?.bots?.[0]?.thought || 'Scanning institutional setups with 4/5 confluence check...'}
                 </div>
+
+                {/* Active Spot Indicator if Sniper is managing a live position */}
+                {(() => {
+                  const sniperSpot = dualBotStatus?.active_spots?.find(s => s.bot_id === 'BOT-001-SNIPER' || s.symbol === 'PEPE/USDT');
+                  if (!sniperSpot) return null;
+                  const isProf = (sniperSpot.unrealized_pnl_pct || 0) >= 0;
+                  return (
+                    <div style={{
+                      marginTop: '0.4rem', padding: '0.35rem 0.6rem', borderRadius: '6px',
+                      background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.3)',
+                      display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.72rem'
+                    }}>
+                      <div style={{display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 800, color: '#10b981'}}>
+                        <span className="live-indicator" style={{background: '#10b981', width: '6px', height: '6px'}} />
+                        <span>LIVE POSITION: {sniperSpot.symbol}</span>
+                      </div>
+                      <div style={{display: 'flex', alignItems: 'center', gap: '6px'}}>
+                        <span style={{fontWeight: 800, color: isProf ? '#10b981' : '#f43f5e'}}>
+                          {isProf ? '+' : ''}{sniperSpot.unrealized_pnl_pct?.toFixed(2)}%
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleClosePosition(sniperSpot.symbol)}
+                          disabled={closingPosition && closingSymbol === sniperSpot.symbol}
+                          style={{
+                            background: 'rgba(244,63,94,0.2)', border: '1px solid #f43f5e',
+                            color: '#f43f5e', borderRadius: '4px', padding: '1px 6px', fontSize: '0.65rem',
+                            fontWeight: 700, cursor: 'pointer'
+                          }}
+                          title="Sell current position on Binance to free capital for fresh setup"
+                        >
+                          {closingPosition && closingSymbol === sniperSpot.symbol ? '...' : '⚡ Free & Re-snipe'}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 <div style={{marginTop: '0.6rem'}}>
                   <button
                     type="button"
                     onClick={() => {
                       setTargetBotId('BOT-001-SNIPER');
-                      setAllocateAmount('1.45');
+                      setAllocateAmount('1.08');
                       setBotAllocateMsg('');
                       setShowBotAllocateModal(true);
                     }}
@@ -4333,7 +4376,10 @@ function App() {
                   <div style={{background: 'rgba(255,255,255,0.02)', padding: '0.5rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)'}}>
                     <div style={{fontSize: '0.65rem', color: 'var(--text-muted)'}}>CAPITAL ALLOCATED</div>
                     <div style={{fontSize: '0.88rem', fontWeight: 800, color: '#10b981'}}>
-                      ${(dualBotStatus?.bots?.[0]?.current_balance ?? 1.45).toFixed(2)} USDT
+                      {(() => {
+                        const sp = dualBotStatus?.active_spots?.find(s => s.bot_id === 'BOT-001-SNIPER' || s.symbol === 'PEPE/USDT');
+                        return `$${(sp ? sp.cost_usd : (dualBotStatus?.bots?.[0]?.current_balance ?? 1.08)).toFixed(2)} USDT`;
+                      })()}
                     </div>
                   </div>
                   <div style={{background: 'rgba(255,255,255,0.02)', padding: '0.5rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)'}}>
@@ -4360,12 +4406,49 @@ function App() {
                   {dualBotStatus?.bots?.[0]?.thought || 'Scanning institutional setups with 4/5 confluence check...'}
                 </div>
 
+                {/* Active Spot Indicator if Sniper is managing a live position */}
+                {(() => {
+                  const sniperSpot = dualBotStatus?.active_spots?.find(s => s.bot_id === 'BOT-001-SNIPER' || s.symbol === 'PEPE/USDT');
+                  if (!sniperSpot) return null;
+                  const isProf = (sniperSpot.unrealized_pnl_pct || 0) >= 0;
+                  return (
+                    <div style={{
+                      marginTop: '0.6rem', padding: '0.45rem 0.75rem', borderRadius: '6px',
+                      background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.3)',
+                      display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.74rem'
+                    }}>
+                      <div style={{display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 800, color: '#10b981'}}>
+                        <span className="live-indicator" style={{background: '#10b981', width: '7px', height: '7px'}} />
+                        <span>LIVE POSITION: {sniperSpot.symbol}</span>
+                      </div>
+                      <div style={{display: 'flex', alignItems: 'center', gap: '8px'}}>
+                        <span style={{fontWeight: 800, color: isProf ? '#10b981' : '#f43f5e'}}>
+                          {isProf ? '+' : ''}{sniperSpot.unrealized_pnl_pct?.toFixed(2)}%
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleClosePosition(sniperSpot.symbol)}
+                          disabled={closingPosition && closingSymbol === sniperSpot.symbol}
+                          style={{
+                            background: 'rgba(244,63,94,0.2)', border: '1px solid #f43f5e',
+                            color: '#f43f5e', borderRadius: '4px', padding: '2px 8px', fontSize: '0.68rem',
+                            fontWeight: 700, cursor: 'pointer'
+                          }}
+                          title="Sell current position on Binance to free capital for fresh setup"
+                        >
+                          {closingPosition && closingSymbol === sniperSpot.symbol ? '...' : '⚡ Free & Re-snipe'}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 <div style={{marginTop: '0.8rem', display: 'flex', gap: '8px'}}>
                   <button
                     type="button"
                     onClick={() => {
                       setTargetBotId('BOT-001-SNIPER');
-                      setAllocateAmount('1.45');
+                      setAllocateAmount('1.08');
                       setBotAllocateMsg('');
                       setShowBotAllocateModal(true);
                     }}
