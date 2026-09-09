@@ -123,14 +123,30 @@ function App() {
   const [matrixLoading, setMatrixLoading] = useState(false)
   const [indicatorCategoryFilter, setIndicatorCategoryFilter] = useState('ALL')
 
+  // ─── LIVE AI NEURAL THOUGHT STREAM & REASONING TERMINAL STATE ───────────────
+  const [thoughtStreamData, setThoughtStreamData] = useState({
+    status: 'ONLINE',
+    thoughts: [],
+    current_target: null,
+    market_stance: 'CAPITAL_PRESERVATION',
+    active_positions_count: 0
+  });
+  const [thoughtFilter, setThoughtFilter] = useState('ALL');
+  const [isThoughtStreamPaused, setIsThoughtStreamPaused] = useState(false);
+  const thoughtScrollRef = useRef(null);
+
   const fetchUniversalData = async () => {
     try {
-      const [dualRes, univRes] = await Promise.all([
+      const [dualRes, univRes, thoughtRes] = await Promise.all([
         fetch(`${API_BASE_URL}/api/bots/dual_status`),
-        fetch(`${API_BASE_URL}/api/market/universal_intelligence`)
+        fetch(`${API_BASE_URL}/api/market/universal_intelligence`),
+        fetch(`${API_BASE_URL}/api/bot/thought_stream`)
       ]);
       if (dualRes.ok) setDualBotStatus(await dualRes.json());
       if (univRes.ok) setUniversalIntelligence(await univRes.json());
+      if (thoughtRes.ok && !isThoughtStreamPaused) {
+        setThoughtStreamData(await thoughtRes.json());
+      }
     } catch (e) {
       // quiet fallback
     }
@@ -803,6 +819,13 @@ function App() {
         // Handle swarm status broadcast from backend
         if (data.swarm_status) {
           setSwarmStatus(data.swarm_status);
+        }
+        if (data.thought_stream_update && !isThoughtStreamPaused) {
+          setThoughtStreamData(prev => ({
+            ...prev,
+            thoughts: data.thought_stream_update.thoughts || prev.thoughts,
+            current_target: data.thought_stream_update.current_target || prev.current_target
+          }));
         }
         if (data.spawn_event) {
           playSound('SUCCESS');
@@ -3533,6 +3556,384 @@ function App() {
                     <span>Allocate $1.20 to Alpha Hunter</span>
                   </button>
                 </div>
+              </div>
+            </div>
+
+            {/* ═════════════════════════════════════════════════════════════════════ */}
+            {/* 🧠 LIVE AI NEURAL THOUGHT STREAM & MULTI-CONFLUENCE REASONING TERMINAL */}
+            {/* ═════════════════════════════════════════════════════════════════════ */}
+            <div className="glass-card" style={{
+              marginBottom: '1.4rem',
+              border: '1px solid rgba(0, 240, 255, 0.35)',
+              background: 'linear-gradient(135deg, rgba(8, 14, 26, 0.95), rgba(15, 23, 42, 0.9))',
+              borderRadius: '16px',
+              padding: '1.3rem',
+              boxShadow: '0 8px 32px rgba(0, 240, 255, 0.12)',
+              position: 'relative',
+              overflow: 'hidden'
+            }}>
+              <div style={{position: 'absolute', top: 0, left: 0, right: 0, height: '3px', background: 'linear-gradient(90deg, #00f0ff, #a855f7, #10b981)'}} />
+
+              {/* Header Bar */}
+              <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem', marginBottom: '1rem'}}>
+                <div>
+                  <div style={{display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap'}}>
+                    <span style={{fontSize: '1.35rem'}}>🧠</span>
+                    <h3 style={{margin: 0, fontSize: '1.1rem', fontWeight: 900, color: '#00f0ff', letterSpacing: '0.04em', textTransform: 'uppercase'}}>
+                      Live AI Neural Thought Stream & Multi-Confluence Reasoning
+                    </h3>
+                    <span style={{
+                      background: 'rgba(0, 240, 255, 0.15)',
+                      border: '1px solid #00f0ff',
+                      borderRadius: '6px',
+                      padding: '2px 8px',
+                      fontSize: '0.72rem',
+                      fontWeight: 800,
+                      color: '#00f0ff',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '5px'
+                    }}>
+                      <span className="live-indicator" style={{background: '#00f0ff', width: '6px', height: '6px'}} />
+                      REAL-TIME REASONING RADAR
+                    </span>
+                  </div>
+                  <div style={{fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '4px'}}>
+                    Live window into bot's neural evaluations: why trades are taken, why they are skipped, and how spot capital ($2.42 free USDT) is guarded.
+                  </div>
+                </div>
+
+                <div style={{display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap'}}>
+                  {/* Market Stance Badge */}
+                  <div style={{
+                    background: (thoughtStreamData?.market_stance === 'CAPITAL_PRESERVATION') ? 'rgba(245, 158, 11, 0.15)' : 'rgba(16, 185, 129, 0.15)',
+                    border: `1px solid ${(thoughtStreamData?.market_stance === 'CAPITAL_PRESERVATION') ? '#f59e0b' : '#10b981'}`,
+                    borderRadius: '8px',
+                    padding: '4px 12px',
+                    fontSize: '0.75rem',
+                    fontWeight: 900,
+                    color: (thoughtStreamData?.market_stance === 'CAPITAL_PRESERVATION') ? '#fbbf24' : '#10b981',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}>
+                    <span>{(thoughtStreamData?.market_stance === 'CAPITAL_PRESERVATION') ? '🛡️' : '⚡'}</span>
+                    <span>STANCE: {(thoughtStreamData?.market_stance === 'CAPITAL_PRESERVATION') ? 'CAPITAL PRESERVATION' : 'ACTIVE HARVESTING'}</span>
+                  </div>
+
+                  {/* Pause / Resume Button */}
+                  <button
+                    type="button"
+                    onClick={() => setIsThoughtStreamPaused(!isThoughtStreamPaused)}
+                    style={{
+                      padding: '5px 12px',
+                      background: isThoughtStreamPaused ? 'rgba(244, 63, 94, 0.2)' : 'rgba(255,255,255,0.06)',
+                      border: `1px solid ${isThoughtStreamPaused ? '#f43f5e' : 'rgba(255,255,255,0.15)'}`,
+                      borderRadius: '8px',
+                      color: isThoughtStreamPaused ? '#f43f5e' : '#e2e8f0',
+                      fontSize: '0.75rem',
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px'
+                    }}
+                  >
+                    <span>{isThoughtStreamPaused ? '▶️' : '⏸️'}</span>
+                    <span>{isThoughtStreamPaused ? 'Resume Feed' : 'Pause Feed'}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* 5-POINT CONFLUENCE CHECKLIST MATRIX (CURRENT EVALUATION RADAR) */}
+              {(() => {
+                const target = thoughtStreamData?.current_target;
+                const checks = target?.pass_checks || {};
+                const cScore = target?.confluence_score ?? 0;
+                const volR = target?.volume_ratio ?? 1.0;
+                const mlSig = target?.ml_signal || 'HOLD';
+                const mlCf = target?.ml_confidence ?? 0.5;
+
+                return (
+                  <div style={{
+                    background: 'rgba(11, 19, 36, 0.85)',
+                    border: '1px solid rgba(56, 189, 248, 0.25)',
+                    borderRadius: '12px',
+                    padding: '0.9rem 1.1rem',
+                    marginBottom: '1rem'
+                  }}>
+                    <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px', marginBottom: '0.7rem'}}>
+                      <div style={{display: 'flex', alignItems: 'center', gap: '8px'}}>
+                        <span style={{fontSize: '1rem'}}>🎯</span>
+                        <span style={{fontWeight: 900, fontSize: '0.86rem', color: '#fff'}}>
+                          LIVE AUDIT RADAR:
+                        </span>
+                        <span style={{fontWeight: 900, fontSize: '0.92rem', color: '#38bdf8', background: 'rgba(56, 189, 248, 0.15)', padding: '2px 8px', borderRadius: '6px'}}>
+                          {target?.symbol || 'SCANNING_UNIVERSE'}
+                        </span>
+                        <span style={{fontSize: '0.74rem', color: 'var(--text-muted)'}}>
+                          Verdict: <strong style={{color: '#fbbf24'}}>{target?.verdict || 'AUDITING'}</strong>
+                        </span>
+                      </div>
+
+                      <div style={{display: 'flex', alignItems: 'center', gap: '12px', fontSize: '0.78rem'}}>
+                        <div>
+                          Confluence: <strong style={{color: cScore >= 4 ? '#10b981' : (cScore >= 2 ? '#fbbf24' : '#f43f5e')}}>{cScore}/5</strong>
+                        </div>
+                        <div>
+                          Vol Ratio: <strong style={{color: volR >= 1.2 ? '#10b981' : '#f43f5e'}}>{volR.toFixed(2)}x</strong> (Req: &ge; 1.20x)
+                        </div>
+                        <div>
+                          Model: <strong style={{color: mlSig === 'BUY' ? '#10b981' : (mlSig === 'SELL' ? '#f43f5e' : '#94a3b8')}}>{mlSig} {Math.round(mlCf * 100)}%</strong>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* 6 Checkpoint Badges Grid */}
+                    <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '0.5rem', marginBottom: '0.7rem'}}>
+                      <div style={{
+                        background: checks.capital_ready ? 'rgba(16, 185, 129, 0.08)' : 'rgba(244, 63, 94, 0.08)',
+                        border: `1px solid ${checks.capital_ready ? 'rgba(16, 185, 129, 0.3)' : 'rgba(244, 63, 94, 0.3)'}`,
+                        borderRadius: '8px', padding: '0.45rem 0.65rem'
+                      }}>
+                        <div style={{fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 700}}>1. CAPITAL READY</div>
+                        <div style={{fontSize: '0.75rem', fontWeight: 800, color: checks.capital_ready ? '#10b981' : '#f43f5e', marginTop: '2px'}}>
+                          {checks.capital_ready ? '✅ Free USDT Ready' : '❌ Low Capital'}
+                        </div>
+                      </div>
+
+                      <div style={{
+                        background: checks.volume_surge ? 'rgba(16, 185, 129, 0.08)' : 'rgba(244, 63, 94, 0.08)',
+                        border: `1px solid ${checks.volume_surge ? 'rgba(16, 185, 129, 0.3)' : 'rgba(244, 63, 94, 0.3)'}`,
+                        borderRadius: '8px', padding: '0.45rem 0.65rem'
+                      }}>
+                        <div style={{fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 700}}>2. VOLUME SURGE (1.20x)</div>
+                        <div style={{fontSize: '0.75rem', fontWeight: 800, color: checks.volume_surge ? '#10b981' : '#f43f5e', marginTop: '2px'}}>
+                          {checks.volume_surge ? `✅ Surging (${volR.toFixed(2)}x)` : `❌ Low Vol (${volR.toFixed(2)}x)`}
+                        </div>
+                      </div>
+
+                      <div style={{
+                        background: checks.ema_trend ? 'rgba(16, 185, 129, 0.08)' : 'rgba(244, 63, 94, 0.08)',
+                        border: `1px solid ${checks.ema_trend ? 'rgba(16, 185, 129, 0.3)' : 'rgba(244, 63, 94, 0.3)'}`,
+                        borderRadius: '8px', padding: '0.45rem 0.65rem'
+                      }}>
+                        <div style={{fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 700}}>3. EMA 9/21/50 TREND</div>
+                        <div style={{fontSize: '0.75rem', fontWeight: 800, color: checks.ema_trend ? '#10b981' : '#f43f5e', marginTop: '2px'}}>
+                          {checks.ema_trend ? '✅ Bullish Trend' : '❌ Flat / Bearish'}
+                        </div>
+                      </div>
+
+                      <div style={{
+                        background: checks.macd_expansion ? 'rgba(16, 185, 129, 0.08)' : 'rgba(244, 63, 94, 0.08)',
+                        border: `1px solid ${checks.macd_expansion ? 'rgba(16, 185, 129, 0.3)' : 'rgba(244, 63, 94, 0.3)'}`,
+                        borderRadius: '8px', padding: '0.45rem 0.65rem'
+                      }}>
+                        <div style={{fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 700}}>4. MACD EXPANSION</div>
+                        <div style={{fontSize: '0.75rem', fontWeight: 800, color: checks.macd_expansion ? '#10b981' : '#f43f5e', marginTop: '2px'}}>
+                          {checks.macd_expansion ? '✅ Histogram Positive' : '❌ Contracting / Red'}
+                        </div>
+                      </div>
+
+                      <div style={{
+                        background: checks.candle_green ? 'rgba(16, 185, 129, 0.08)' : 'rgba(244, 63, 94, 0.08)',
+                        border: `1px solid ${checks.candle_green ? 'rgba(16, 185, 129, 0.3)' : 'rgba(244, 63, 94, 0.3)'}`,
+                        borderRadius: '8px', padding: '0.45rem 0.65rem'
+                      }}>
+                        <div style={{fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 700}}>5. BULLISH CANDLE</div>
+                        <div style={{fontSize: '0.75rem', fontWeight: 800, color: checks.candle_green ? '#10b981' : '#f43f5e', marginTop: '2px'}}>
+                          {checks.candle_green ? '✅ Clean Green Candle' : '❌ Red / Wick Rejection'}
+                        </div>
+                      </div>
+
+                      <div style={{
+                        background: checks.reputation_safe ? 'rgba(16, 185, 129, 0.08)' : 'rgba(244, 63, 94, 0.08)',
+                        border: `1px solid ${checks.reputation_safe ? 'rgba(16, 185, 129, 0.3)' : 'rgba(244, 63, 94, 0.3)'}`,
+                        borderRadius: '8px', padding: '0.45rem 0.65rem'
+                      }}>
+                        <div style={{fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 700}}>6. REPUTATION GATE</div>
+                        <div style={{fontSize: '0.75rem', fontWeight: 800, color: checks.reputation_safe ? '#10b981' : '#f43f5e', marginTop: '2px'}}>
+                          {checks.reputation_safe ? '✅ Clean Record' : '❌ Blacklisted'}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Human Explanation Box */}
+                    <div style={{
+                      background: 'rgba(0,0,0,0.35)',
+                      borderLeft: '3px solid #38bdf8',
+                      borderRadius: '6px',
+                      padding: '0.55rem 0.85rem',
+                      fontSize: '0.75rem',
+                      color: '#cbd5e1',
+                      lineHeight: '1.4'
+                    }}>
+                      <strong style={{color: '#38bdf8'}}>🧠 Bot Internal Logic: </strong>
+                      {cScore < 3 ? (
+                        <span>
+                          Candles on {target?.symbol || 'candidates'} are currently in consolidation or distribution. Confluence is only {cScore}/5 (below the required 3/5 Alpha or 4/5 Sniper threshold). Free capital ($2.42 USDT) is strictly safeguarded from false breakouts.
+                        </span>
+                      ) : volR < 1.20 ? (
+                        <span>
+                          Technical indicators are warming up ({cScore}/5), but volume surge is {volR.toFixed(2)}x (below 1.20x required threshold). Bot will not buy dry candles to prevent slippage.
+                        </span>
+                      ) : mlSig === 'SELL' ? (
+                        <span>
+                          Machine learning classifier detected downward selling pressure ({mlSig} {Math.round(mlCf * 100)}%). Capital preservation active.
+                        </span>
+                      ) : (
+                        <span>
+                          Indicators and volume aligning! Monitoring for immediate execution window.
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* FILTER BUTTONS & THOUGHT STREAM TERMINAL */}
+              <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px', marginBottom: '0.7rem'}}>
+                <div style={{display: 'flex', gap: '6px', flexWrap: 'wrap'}}>
+                  {[
+                    { id: 'ALL', label: 'All Thoughts' },
+                    { id: 'GATED_REJECTION', label: '🛑 Capital Guards / Rejections' },
+                    { id: 'CONFLUENCE_EVAL', label: '⏳ Confluence Checks' },
+                    { id: 'TRADE_ARMED', label: '🚀 Armed Trades' },
+                    { id: 'POSITION_MANAGEMENT', label: '🛡️ Position Mgmt' }
+                  ].map(f => {
+                    const isActive = thoughtFilter === f.id;
+                    return (
+                      <button
+                        key={f.id}
+                        type="button"
+                        onClick={() => setThoughtFilter(f.id)}
+                        style={{
+                          padding: '4px 10px',
+                          borderRadius: '6px',
+                          fontSize: '0.72rem',
+                          fontWeight: 800,
+                          cursor: 'pointer',
+                          background: isActive ? 'rgba(0, 240, 255, 0.2)' : 'rgba(255,255,255,0.03)',
+                          border: `1px solid ${isActive ? '#00f0ff' : 'rgba(255,255,255,0.08)'}`,
+                          color: isActive ? '#00f0ff' : 'var(--text-muted)'
+                        }}
+                      >
+                        {f.label}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div style={{fontSize: '0.72rem', color: 'var(--text-muted)'}}>
+                  Showing {(() => {
+                    const list = thoughtStreamData?.thoughts || [];
+                    if (thoughtFilter === 'ALL') return list.length;
+                    return list.filter(t => t.category === thoughtFilter).length;
+                  })()} items
+                </div>
+              </div>
+
+              {/* Neural Feed Box */}
+              <div 
+                ref={thoughtScrollRef}
+                style={{
+                  maxHeight: '340px',
+                  overflowY: 'auto',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.5rem',
+                  paddingRight: '4px'
+                }}
+              >
+                {(() => {
+                  const rawList = thoughtStreamData?.thoughts || [];
+                  const filtered = thoughtFilter === 'ALL' 
+                    ? rawList 
+                    : rawList.filter(t => t.category === thoughtFilter);
+
+                  if (filtered.length === 0) {
+                    return (
+                      <div style={{
+                        padding: '1.5rem',
+                        textAlign: 'center',
+                        color: 'var(--text-muted)',
+                        fontSize: '0.78rem',
+                        background: 'rgba(0,0,0,0.2)',
+                        borderRadius: '8px',
+                        border: '1px dashed rgba(255,255,255,0.1)'
+                      }}>
+                        Awaiting new neural thoughts in this category... Bot is actively evaluating market candles.
+                      </div>
+                    );
+                  }
+
+                  // Display thoughts latest first
+                  return [...filtered].reverse().map((thought, idx) => {
+                    const isRejection = thought.category === 'GATED_REJECTION';
+                    const isConfluence = thought.category === 'CONFLUENCE_EVAL';
+                    const isArmed = thought.category === 'TRADE_ARMED';
+                    const isPos = thought.category === 'POSITION_MANAGEMENT';
+
+                    const borderCol = isArmed ? '#10b981' : (isRejection ? '#f43f5e' : (isConfluence ? '#f59e0b' : '#38bdf8'));
+                    const bgCol = isArmed ? 'rgba(16, 185, 129, 0.08)' : (isRejection ? 'rgba(244, 63, 94, 0.06)' : (isConfluence ? 'rgba(245, 158, 11, 0.06)' : 'rgba(56, 189, 248, 0.06)'));
+
+                    return (
+                      <div 
+                        key={thought.id || idx}
+                        style={{
+                          background: bgCol,
+                          borderLeft: `3px solid ${borderCol}`,
+                          borderTop: '1px solid rgba(255,255,255,0.03)',
+                          borderRight: '1px solid rgba(255,255,255,0.03)',
+                          borderBottom: '1px solid rgba(255,255,255,0.03)',
+                          borderRadius: '8px',
+                          padding: '0.6rem 0.8rem',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '4px'
+                        }}
+                      >
+                        <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '6px'}}>
+                          <div style={{display: 'flex', alignItems: 'center', gap: '6px'}}>
+                            <span style={{fontSize: '0.85rem'}}>{thought.status_icon || '🔍'}</span>
+                            <span style={{
+                              fontWeight: 800, fontSize: '0.74rem', color: '#fff',
+                              fontFamily: 'monospace'
+                            }}>
+                              {thought.headline}
+                            </span>
+                          </div>
+
+                          <div style={{display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.68rem', fontFamily: 'monospace'}}>
+                            <span style={{color: '#38bdf8', fontWeight: 800}}>#{thought.symbol}</span>
+                            <span style={{color: 'var(--text-muted)'}}>•</span>
+                            <span style={{color: '#a78bfa'}}>{thought.bot_name}</span>
+                            <span style={{color: 'var(--text-muted)'}}>•</span>
+                            <span style={{color: 'var(--text-muted)'}}>{thought.timestamp}</span>
+                          </div>
+                        </div>
+
+                        <div style={{fontSize: '0.73rem', color: '#cbd5e1', lineHeight: '1.35', paddingLeft: '1.4rem'}}>
+                          {thought.detailed_reasoning}
+                        </div>
+
+                        {(thought.confluence_score > 0 || thought.volume_ratio > 1.0) && (
+                          <div style={{display: 'flex', gap: '8px', paddingLeft: '1.4rem', fontSize: '0.68rem', color: 'var(--text-muted)', fontFamily: 'monospace', marginTop: '2px'}}>
+                            <span>Confluence: <strong style={{color: thought.confluence_score >= 4 ? '#10b981' : '#f59e0b'}}>{thought.confluence_score}/5</strong></span>
+                            <span>•</span>
+                            <span>Vol: <strong style={{color: thought.volume_ratio >= 1.2 ? '#10b981' : '#f43f5e'}}>{thought.volume_ratio}x</strong></span>
+                            {thought.ml_signal && (
+                              <>
+                                <span>•</span>
+                                <span>ML: <strong style={{color: thought.ml_signal === 'BUY' ? '#10b981' : '#f43f5e'}}>{thought.ml_signal} ({Math.round((thought.ml_confidence || 0.5) * 100)}%)</strong></span>
+                              </>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  });
+                })()}
               </div>
             </div>
 

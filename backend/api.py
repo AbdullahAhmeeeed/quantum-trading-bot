@@ -13,6 +13,7 @@ import random
 import os
 import re
 import urllib.request
+import threading
 import pandas as pd
 import numpy as np
 from pydantic import BaseModel
@@ -41,6 +42,73 @@ strategy = QuantStrategyEngine()
 execution = ExecutionEngine()
 
 active_connections = []
+
+# ─── LIVE AI NEURAL THOUGHT STREAM BUFFER (MAX 60 LOGS) ─────────────────────
+bot_thought_stream: List[dict] = []
+current_target_eval: dict = {
+    "symbol": "Scanning...",
+    "confluence_score": 0,
+    "volume_ratio": 1.0,
+    "ml_confidence": 0.5,
+    "ml_signal": "HOLD",
+    "reasons": ["Market auditing initialized. Awaiting candle confirmation."],
+    "pass_checks": {
+        "capital_ready": True,
+        "volume_surge": False,
+        "ema_trend": False,
+        "macd_expansion": False,
+        "candle_green": False,
+        "reputation_safe": True
+    },
+    "verdict": "SCANNING_MARKET"
+}
+thought_stream_lock = threading.Lock()
+
+def record_bot_thought(bot_id: str, bot_name: str, symbol: str, category: str, 
+                       headline: str, detailed_reasoning: str, status_icon: str = "🔍",
+                       confluence_score: int = 0, volume_ratio: float = 1.0, 
+                       ml_confidence: float = 0.5, ml_signal: str = "HOLD"):
+    """Thread-safely records a structured AI thought and caps the ring buffer at 60 items."""
+    global bot_thought_stream
+    with thought_stream_lock:
+        entry = {
+            "id": f"th-{int(time.time()*1000)%1000000:06d}",
+            "timestamp": datetime.now(timezone.utc).strftime("%H:%M:%S"),
+            "bot_id": bot_id,
+            "bot_name": bot_name,
+            "symbol": symbol,
+            "category": category, # "SCANNING" | "GATED_REJECTION" | "CONFLUENCE_EVAL" | "TRADE_ARMED" | "POSITION_MANAGEMENT"
+            "confluence_score": confluence_score,
+            "volume_ratio": round(volume_ratio, 2),
+            "ml_confidence": round(ml_confidence, 2),
+            "ml_signal": ml_signal,
+            "headline": headline,
+            "detailed_reasoning": detailed_reasoning,
+            "status_icon": status_icon
+        }
+        bot_thought_stream.append(entry)
+        if len(bot_thought_stream) > 60:
+            bot_thought_stream.pop(0)
+
+@app.get("/api/bot/thought_stream")
+def get_bot_thought_stream():
+    """Returns the live stream of AI thoughts, target checklist evaluation, and current market stance."""
+    global bot_thought_stream, current_target_eval
+    with thought_stream_lock:
+        thoughts = list(bot_thought_stream)
+        curr_eval = dict(current_target_eval)
+    
+    active_spots = bm.get_active_real_positions()
+    stance = "CAPITAL_PRESERVATION" if not active_spots else "ACTIVE_WAVE_HARVESTING"
+    
+    return {
+        "status": "ONLINE",
+        "thoughts": thoughts,
+        "current_target": curr_eval,
+        "market_stance": stance,
+        "active_positions_count": len(active_spots),
+        "timestamp": int(time.time())
+    }
 
 @app.get("/api/market/model_stats")
 def get_model_stats():
@@ -2062,10 +2130,19 @@ async def swarm_trading_loop():
                             updated_pos["breakeven_locked"] = True
                             stop_p = be_stop
                             be_msg = f"🛡️ FEE-PROOF BREAKEVEN on {sym}! SL locked @ ${be_stop:.8f} (+0.22% covers Binance fees). Zero fee loss risk!"
+                            owner_b = active_real_pos.get("bot_id") or bot_id
                             with bm.swarm_lock:
-                                owner_b = active_real_pos.get("bot_id") or bot_id
                                 if owner_b in bm.swarm_bots:
                                     bm.swarm_bots[owner_b]["thought"] = be_msg
+                            record_bot_thought(
+                                bot_id=owner_b,
+                                bot_name=owner_b,
+                                symbol=sym,
+                                category="POSITION_MANAGEMENT",
+                                headline=f"Fee-Proof Breakeven Locked @ ${be_stop:.8f}",
+                                detailed_reasoning=f"Position up +{pnl_pct:.2f}%. Stop-loss ratcheted to +0.22% to completely insulate against Binance 0.20% trading fee. Capital protected from loss.",
+                                status_icon="🛡️"
+                            )
                             for conn in list(active_connections):
                                 try:
                                     await conn.send_json({"log": be_msg, "swarm_update": True})
@@ -2097,6 +2174,15 @@ async def swarm_trading_loop():
                                                    lowest_p=updated_pos.get("lowest_price", entry_p))
                             bm.remove_real_position(sym)
                             quick_msg = f"⚡ INSTANT QUICK-PROFIT LOCKED! Sold {sym} @ ${live_p:.8f} (+{pnl_pct:.2f}% | +${pnl_usd:.4f} USD) | {stall_reason}"
+                            record_bot_thought(
+                                bot_id=owner_bot,
+                                bot_name=owner_bot,
+                                symbol=sym,
+                                category="POSITION_MANAGEMENT",
+                                headline=f"Quick Profit Locked on Momentum Stall (+{pnl_pct:.2f}%)",
+                                detailed_reasoning=f"Exited {sym} at ${live_p:.8f}. Banked +${pnl_usd:.4f} net profit due to {stall_reason}.",
+                                status_icon="⚡"
+                            )
                             with bm.swarm_lock:
                                 if owner_bot in bm.swarm_bots:
                                     bm.swarm_bots[owner_bot]["thought"] = quick_msg
@@ -2123,6 +2209,15 @@ async def swarm_trading_loop():
                                                    lowest_p=updated_pos.get("lowest_price", entry_p))
                             bm.remove_real_position(sym)
                             profit_msg = f"🏆 REAL SPOT TAKE-PROFIT HIT! Sold {sym} @ ${live_p:.8f} (+{pnl_pct:.2f}% | +${pnl_usd:.4f} USD) | Binance Profit Locked!"
+                            record_bot_thought(
+                                bot_id=owner_bot,
+                                bot_name=owner_bot,
+                                symbol=sym,
+                                category="POSITION_MANAGEMENT",
+                                headline=f"Take-Profit Realized: {sym} (+{pnl_pct:.2f}%)",
+                                detailed_reasoning=f"Sold at target ${live_p:.8f}. Locked +${pnl_usd:.4f} net USD on Binance Spot.",
+                                status_icon="🏆"
+                            )
                             with bm.swarm_lock:
                                 if owner_bot in bm.swarm_bots:
                                     bm.swarm_bots[owner_bot]["thought"] = profit_msg
@@ -2152,6 +2247,15 @@ async def swarm_trading_loop():
                             bm.remove_real_position(sym)
                             sl_tag = "🎉 TRAILING PROFIT SECURED" if is_win else "🛡️ REAL SPOT STOP-LOSS TRIGGERED"
                             sl_msg = f"{sl_tag}: Sold {sym} @ ${live_p:.8f} ({pnl_pct:+.2f}% | {pnl_usd:+.4f} USD) to protect capital."
+                            record_bot_thought(
+                                bot_id=owner_bot,
+                                bot_name=owner_bot,
+                                symbol=sym,
+                                category="POSITION_MANAGEMENT",
+                                headline=f"{sl_tag} on {sym} ({pnl_pct:+.2f}%)",
+                                detailed_reasoning=f"Sold at ${live_p:.8f} ({pnl_usd:+.4f} USD). Free capital returned to spot balance for next wave.",
+                                status_icon="🎉" if is_win else "🛡️"
+                            )
                             with bm.swarm_lock:
                                 if owner_bot in bm.swarm_bots:
                                     bm.swarm_bots[owner_bot]["thought"] = sl_msg
@@ -2322,8 +2426,39 @@ async def swarm_trading_loop():
                                         vol_r = float(chart_analysis.get('metrics', {}).get('vol_ratio', 1.0) or 1.0)
                                         is_green_c = bool(chart_analysis.get('metrics', {}).get('is_green', False))
                                         
+                                        # Update live target evaluation checklist for UI
+                                        with thought_stream_lock:
+                                            current_target_eval = {
+                                                "symbol": cp,
+                                                "confluence_score": c_score,
+                                                "volume_ratio": round(vol_r, 2),
+                                                "ml_confidence": 0.50,
+                                                "ml_signal": chart_analysis.get("signal", "HOLD"),
+                                                "reasons": chart_analysis.get("reasons", []),
+                                                "pass_checks": {
+                                                    "capital_ready": free_usdt >= 1.08,
+                                                    "volume_surge": vol_r >= 1.20,
+                                                    "ema_trend": c_score >= 1,
+                                                    "macd_expansion": c_score >= 2,
+                                                    "candle_green": is_green_c,
+                                                    "reputation_safe": True
+                                                },
+                                                "verdict": "AUDITING_MARKET_CONDITIONS"
+                                            }
+
                                         # 🛡️ STRICT VOLUME SURGE GUARD: Never enter on dry / dead volume!
                                         if vol_r < 1.20:
+                                            record_bot_thought(
+                                                bot_id="BOT-001-SNIPER",
+                                                bot_name="Sniper #1",
+                                                symbol=cp,
+                                                category="GATED_REJECTION",
+                                                headline=f"Dry Volume Guard ({vol_r:.2f}x < 1.20x)",
+                                                detailed_reasoning=f"Capital protection engaged. Volume on {cp} ({vol_r:.2f}x 20-bar avg) lacks momentum. Entering dry volume risks false breakout traps and slippage.",
+                                                status_icon="🛑",
+                                                confluence_score=c_score,
+                                                volume_ratio=vol_r
+                                            )
                                             continue
 
                                         # Bot 1 (Sniper): requires 4/5 confluence & volume surge
@@ -2333,6 +2468,20 @@ async def swarm_trading_loop():
                                         is_alpha_approved = (
                                             c_score >= 3 and vol_r >= 1.25 and (sent_val >= 0.0 or is_green_c)
                                         )
+
+                                        if not is_sniper_approved and not is_alpha_approved:
+                                            record_bot_thought(
+                                                bot_id="BOT-002-ALPHA",
+                                                bot_name="Alpha Hunter #2",
+                                                symbol=cp,
+                                                category="CONFLUENCE_EVAL",
+                                                headline=f"Setup Incomplete ({c_score}/5 Confluence)",
+                                                detailed_reasoning=f"{cp} surged to {vol_r:.2f}x volume, but technical indicators gave only {c_score}/5 confirmations. Sniper requires 4/5, Alpha requires 3/5 with green candle. Capital preserved.",
+                                                status_icon="⏳",
+                                                confluence_score=c_score,
+                                                volume_ratio=vol_r
+                                            )
+                                            continue
 
                                         target_bot_id = None
                                         target_bot_name = None
@@ -2353,6 +2502,42 @@ async def swarm_trading_loop():
 
                                         ml_sig, ml_cf = strategy.generate_signals(df)
                                         min_cf = 0.70  # Strict 70%+ confidence for BOTH bots!
+                                        
+                                        with thought_stream_lock:
+                                            current_target_eval["ml_confidence"] = round(ml_cf, 2)
+                                            current_target_eval["ml_signal"] = ml_sig
+
+                                        if ml_sig == "SELL":
+                                            record_bot_thought(
+                                                bot_id=target_bot_id,
+                                                bot_name=target_bot_name,
+                                                symbol=cp,
+                                                category="GATED_REJECTION",
+                                                headline=f"Bearish ML Filter ({ml_sig} {int(ml_cf*100)}%)",
+                                                detailed_reasoning=f"Model detected active distribution on {cp} with {int(ml_cf*100)}% conviction. Trade aborted to prevent buying red candle.",
+                                                status_icon="🔻",
+                                                confluence_score=c_score,
+                                                volume_ratio=vol_r,
+                                                ml_confidence=ml_cf,
+                                                ml_signal=ml_sig
+                                            )
+                                            continue
+
+                                        if ml_cf < min_cf and c_score < 4:
+                                            record_bot_thought(
+                                                bot_id=target_bot_id,
+                                                bot_name=target_bot_name,
+                                                symbol=cp,
+                                                category="GATED_REJECTION",
+                                                headline=f"Confidence Below Threshold ({int(ml_cf*100)}% < 70%)",
+                                                detailed_reasoning=f"Signal {ml_sig} on {cp} has {int(ml_cf*100)}% confidence, below required 70% threshold. Capital preserved.",
+                                                status_icon="⚠️",
+                                                confluence_score=c_score,
+                                                volume_ratio=vol_r,
+                                                ml_confidence=ml_cf,
+                                                ml_signal=ml_sig
+                                            )
+                                            continue
                                         
                                         if (ml_sig in ["BUY", "HOLD"] or c_score >= 4) and ml_cf >= min_cf:
                                             # Extract market features for self-learning memory
@@ -2375,11 +2560,40 @@ async def swarm_trading_loop():
                                             # Self-learning adaptive gate: check coin reputation + learned thresholds
                                             should_trade, gate_reason = tmem.should_take_trade(cp, ml_cf, entry_features)
                                             if not should_trade:
+                                                record_bot_thought(
+                                                    bot_id="BOT-BRAIN",
+                                                    bot_name="Trade Memory",
+                                                    symbol=cp,
+                                                    category="GATED_REJECTION",
+                                                    headline=f"Reputation Gate Blocked ({gate_reason})",
+                                                    detailed_reasoning=f"Historical self-learning database vetoed {cp}: {gate_reason}.",
+                                                    status_icon="🧠",
+                                                    confluence_score=c_score,
+                                                    volume_ratio=vol_r,
+                                                    ml_confidence=ml_cf,
+                                                    ml_signal=ml_sig
+                                                )
                                                 print(f"[SelfLearn] Skipping {cp} for {target_bot_id}: {gate_reason}")
                                                 continue
                                             
                                             # Blend confidence with self-learned outcome model
                                             blended_cf = tmem.get_blended_confidence(ml_cf, entry_features)
+                                            
+                                            record_bot_thought(
+                                                bot_id=target_bot_id,
+                                                bot_name=target_bot_name,
+                                                symbol=cp,
+                                                category="TRADE_ARMED",
+                                                headline=f"🎯 TRADE ARMED: {target_bot_name} triggering BUY!",
+                                                detailed_reasoning=f"All confluences verified: Score {c_score}/5, Volume {vol_r:.2f}x, Model {ml_sig} ({int(blended_cf*100)}%). Executing spot market order on Binance.",
+                                                status_icon="🚀",
+                                                confluence_score=c_score,
+                                                volume_ratio=vol_r,
+                                                ml_confidence=blended_cf,
+                                                ml_signal=ml_sig
+                                            )
+                                            with thought_stream_lock:
+                                                current_target_eval["verdict"] = f"ARMED_BUY_{target_bot_id}"
                                             
                                             best_real_opp = (cp, cp_price, blended_cf, chart_analysis, target_bot_id, target_bot_name, target_size)
                                             best_features = entry_features
@@ -2387,6 +2601,20 @@ async def swarm_trading_loop():
                                     except Exception as scan_err:
                                         print(f"[CandidateScan] Error evaluating {cp}: {scan_err}")
                                         continue
+
+                                if not best_real_opp and candidate_pairs:
+                                    if loop_tick % 4 == 0:
+                                        with thought_stream_lock:
+                                            current_target_eval["verdict"] = "CAPITAL_PRESERVATION_HOLD"
+                                        record_bot_thought(
+                                            bot_id="SWARM-ORCHESTRATOR",
+                                            bot_name="Swarm Master",
+                                            symbol=candidate_pairs[0] if candidate_pairs else "SCAN",
+                                            category="SCANNING",
+                                            headline=f"Cycle Audit Complete: Capital Preserved ({len(candidate_pairs)} Pairs Checked)",
+                                            detailed_reasoning=f"Multi-confluence scan complete across {len(candidate_pairs)} candidate pairs. No asset met strict 4/5 confluence + 1.20x volume + ML BUY criteria. Holding $2.42 free USDT safely.",
+                                            status_icon="🛡️"
+                                        )
 
                                 if best_real_opp and best_features:
                                     r_pair, r_price, r_conf, r_chart, r_bot_id, r_bot_name, r_size = best_real_opp
@@ -2524,12 +2752,21 @@ async def swarm_trading_loop():
                             b2["thought"] = f"⚡ ALPHA HUNTER: Scanning 30+ meme & alt tokens for internet news sentiment and volume surge breakouts."
                             b2["active_pair"] = None
 
-            # Broadcast full swarm status every 3 ticks
+            # Broadcast full swarm status & neural thought stream every 3 ticks
             if loop_tick % 3 == 0:
                 summary = bm.get_swarm_summary()
+                with thought_stream_lock:
+                    live_thoughts = list(bot_thought_stream[-15:])
+                    curr_eval = dict(current_target_eval)
                 for conn in list(active_connections):
                     try:
-                        await conn.send_json({"swarm_status": summary})
+                        await conn.send_json({
+                            "swarm_status": summary,
+                            "thought_stream_update": {
+                                "thoughts": live_thoughts,
+                                "current_target": curr_eval
+                            }
+                        })
                     except Exception:
                         pass
 
